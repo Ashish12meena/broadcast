@@ -22,6 +22,7 @@ import com.aigreentick.services.messaging.broadcast.kafka.producer.BroadcastRepo
 import com.aigreentick.services.messaging.broadcast.model.Broadcast;
 import com.aigreentick.services.messaging.report.model.Report;
 import com.aigreentick.services.messaging.report.service.impl.ReportServiceImpl;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,10 +37,8 @@ public class BroadcastOrchestratorServiceImpl {
     private final BroadcastReportProducer broadcastReportProducer;
     private final ReportServiceImpl reportService;
     private final BroadcastServiceImpl broadcastServiceImpl;
+    private final ObjectMapper objectMapper;
 
-    /**
-     * Main broadcast handler - orchestrates entire broadcast flow
-     */
     @Transactional
     public ResponseMessage<BroadcastResult> handleBroadcast(BroadcastRequest request) {
         long startTime = System.currentTimeMillis();
@@ -51,7 +50,7 @@ public class BroadcastOrchestratorServiceImpl {
                 request.getMobileNumbers().size(), 
                 request.getCampName());
 
-            //  Validate and fetch user configuration
+            // 1. Validate and fetch user configuration
             User user = validateAndGetUser();
             WhatsappAccount config = userService.findActiveByUserId(user.getId());
             
@@ -59,7 +58,7 @@ public class BroadcastOrchestratorServiceImpl {
                 return ResponseMessage.error("No active WhatsApp account found for user");
             }
 
-            //  Validate and fetch template
+            // 2. Validate and fetch template
             Template template = templateService.findByNameAndUserIdNotDeleted(
                     request.getTemplatename(),
                     user.getId());
@@ -68,7 +67,7 @@ public class BroadcastOrchestratorServiceImpl {
                 return ResponseMessage.error("Template not found: " + request.getTemplatename());
             }
 
-            //  Filter and validate mobile numbers
+            // 3. Filter and validate mobile numbers
             List<String> validNumbers = filterAndValidateNumbers(request.getMobileNumbers());
             
             if (validNumbers.isEmpty()) {
@@ -78,9 +77,12 @@ public class BroadcastOrchestratorServiceImpl {
             log.info("Validated {} out of {} mobile numbers", 
                 validNumbers.size(), request.getMobileNumbers().size());
 
-            // Build templates for all recipients
+            // 4. Create broadcast record 
+            Broadcast broadcast = createBroadcast(request, user.getId(), validNumbers.size());
+
+            // 5. Build templates for all recipients
             TemplateValidationResult validationResult = buildAndValidateTemplates(
-                    user.getId(), validNumbers, template, request);
+                    user.getId(), validNumbers, template, request, broadcast);
 
             if (validationResult.validTemplates().isEmpty()) {
                 return ResponseMessage.error("Failed to build templates for any recipient");
@@ -89,10 +91,6 @@ public class BroadcastOrchestratorServiceImpl {
             log.info("Built {} valid templates (Invalid: {})", 
                 validationResult.validRecipients().size(),
                 validationResult.invalidRecipients().size());
-
-            // 5. Create broadcast record
-            Broadcast broadcast = createBroadcast(request, user.getId(), 
-                validationResult.validRecipients().size());
 
             // 6. Create report entries for each recipient
             List<Report> reports = createReportEntries(
@@ -139,9 +137,6 @@ public class BroadcastOrchestratorServiceImpl {
         }
     }
 
-    /**
-     * Validate user and return user object
-     */
     private User validateAndGetUser() {
         User user = new User();
         user.setId(1L);
@@ -149,9 +144,6 @@ public class BroadcastOrchestratorServiceImpl {
         return user;
     }
 
-    /**
-     * Filter and validate mobile numbers
-     */
     private List<String> filterAndValidateNumbers(List<String> mobileNumbers) {
         return mobileNumbers.stream()
                 .filter(Objects::nonNull)
@@ -161,26 +153,24 @@ public class BroadcastOrchestratorServiceImpl {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Build and validate templates for all recipients
-     */
     private TemplateValidationResult buildAndValidateTemplates(
             Long userId, 
             List<String> validNumbers, 
             Template template,
-            BroadcastRequest request) {
+            BroadcastRequest request,
+            Broadcast broadcast) {
         
         List<String> validRecipients = new ArrayList<>();
         List<String> invalidRecipients = new ArrayList<>();
         
         try {
-            // Build templates using template builder service
+            // Build templates using template builder service with ALL required parameters
             List<Map<String, Object>> allTemplates = templateBuilderService
-                    .buildSendableTemplates(validNumbers, template, request);
+                    .buildSendableTemplates(validNumbers, template, request, userId, broadcast);
 
             // Validate each template
             List<Map<String, Object>> validTemplates = allTemplates.stream()
-                    .filter(req -> validateTemplate(req, validRecipients, invalidRecipients))
+                    .filter(templateMap -> validateTemplate(templateMap, validRecipients, invalidRecipients))
                     .collect(Collectors.toList());
 
             return new TemplateValidationResult(validTemplates, validRecipients, invalidRecipients);
@@ -191,41 +181,50 @@ public class BroadcastOrchestratorServiceImpl {
         }
     }
 
-    /**
-     * Validates a single template and categorizes the recipient
-     */
+    @SuppressWarnings("unchecked")
     private boolean validateTemplate(
-            Map<String, Object> request,
+            Map<String, Object> templateMap,
             List<String> validRecipients,
             List<String> invalidRecipients) {
 
         try {
-            if (request.getTemplate() == null) {
-                log.warn("Template not built for recipient: {}", request.getTo());
-                invalidRecipients.add(request.getTo());
+            String recipient = (String) templateMap.get("to");
+            
+            if (recipient == null || recipient.trim().isEmpty()) {
+                log.warn("Missing recipient in template");
                 return false;
             }
 
-            if (request.getTemplate().getName() == null ||
-                    request.getTemplate().getLanguage() == null) {
-                log.warn("Incomplete template for recipient: {}", request.getTo());
-                invalidRecipients.add(request.getTo());
+            Map<String, Object> template = (Map<String, Object>) templateMap.get("template");
+            
+            if (template == null) {
+                log.warn("Template not built for recipient: {}", recipient);
+                invalidRecipients.add(recipient);
                 return false;
             }
 
-            validRecipients.add(request.getTo());
+            String name = (String) template.get("name");
+            Map<String, Object> language = (Map<String, Object>) template.get("language");
+            
+            if (name == null || name.trim().isEmpty() || language == null) {
+                log.warn("Incomplete template for recipient: {}", recipient);
+                invalidRecipients.add(recipient);
+                return false;
+            }
+
+            validRecipients.add(recipient);
             return true;
 
         } catch (Exception e) {
-            log.error("Validation failed for recipient: {}", request.getTo(), e);
-            invalidRecipients.add(request.getTo());
+            log.error("Validation failed for template", e);
+            String recipient = (String) templateMap.get("to");
+            if (recipient != null) {
+                invalidRecipients.add(recipient);
+            }
             return false;
         }
     }
 
-    /**
-     * Create broadcast record in database
-     */
     private Broadcast createBroadcast(BroadcastRequest request, Long userId, int totalRecipients) {
         Broadcast broadcast = Broadcast.builder()
                 .userId(userId)
@@ -238,12 +237,8 @@ public class BroadcastOrchestratorServiceImpl {
                 .build();
 
         return broadcastServiceImpl.save(broadcast);
-       
     }
 
-    /**
-     * Create report entries for each recipient
-     */
     private List<Report> createReportEntries(
             Long broadcastId, 
             Long userId, 
@@ -263,7 +258,6 @@ public class BroadcastOrchestratorServiceImpl {
                     .platform("WHATSAPP")
                     .build();
 
-            // Save each report
             Report saved = reportService.save(report);
             reports.add(saved);
         }
@@ -273,9 +267,6 @@ public class BroadcastOrchestratorServiceImpl {
         return reports;
     }
 
-    /**
-     * Publish broadcast events to Kafka
-     */
     private CompletableFuture<Void> publishBroadcastEvents(
             List<Report> reports,
             List<Map<String, Object>> templates,
@@ -283,9 +274,13 @@ public class BroadcastOrchestratorServiceImpl {
             Long broadcastId, 
             Long userId) {
 
-        // Create map for fast lookup
+        // Create map for fast lookup by mobile number (recipient)
         Map<String, Map<String, Object>> templateMap = templates.stream()
-                .collect(Collectors.toMap(BuildTemplate::getTo, t -> t, (a, b) -> a));
+                .collect(Collectors.toMap(
+                    t -> (String) t.get("to"), 
+                    t -> t, 
+                    (a, b) -> a
+                ));
 
         // Create Kafka events
         List<BroadcastReportEvent> events = reports.stream()
@@ -310,19 +305,23 @@ public class BroadcastOrchestratorServiceImpl {
         return publishFuture;
     }
 
-    /**
-     * Create a single broadcast event
-     */
     private BroadcastReportEvent createBroadcastReportEvent(
             Report report,
-            Map<String, BuildTemplate> templateMap,
+            Map<String, Map<String, Object>> templateMap,
             WhatsappAccount config,
             Long broadcastId,
             Long userId) {
 
-        BuildTemplate template = templateMap.get(report.getMobile());
-        if (template == null) {
+        Map<String, Object> templateData = templateMap.get(report.getMobile());
+        if (templateData == null) {
             log.warn("No template found for recipient: {}", report.getMobile());
+            return null;
+        }
+
+        // Convert Map to BuildTemplate object
+        BuildTemplate buildTemplate = convertMapToBuildTemplate(templateData);
+        if (buildTemplate == null) {
+            log.warn("Failed to convert template for recipient: {}", report.getMobile());
             return null;
         }
 
@@ -333,21 +332,27 @@ public class BroadcastOrchestratorServiceImpl {
                 config.getWhatsappNoId(),
                 config.getParmenentToken(),
                 report.getMobile(),
-                template);
+                buildTemplate);
     }
 
-    /**
-     * Result of template validation process
-     */
+    @SuppressWarnings("unchecked")
+    private BuildTemplate convertMapToBuildTemplate(Map<String, Object> templateData) {
+        try {
+            // Use ObjectMapper to convert Map to BuildTemplate
+            String json = objectMapper.writeValueAsString(templateData);
+            return objectMapper.readValue(json, BuildTemplate.class);
+        } catch (Exception e) {
+            log.error("Failed to convert template map to BuildTemplate", e);
+            return null;
+        }
+    }
+
     private record TemplateValidationResult(
-            List<BuildTemplate> validTemplates,
+            List<Map<String, Object>> validTemplates,
             List<String> validRecipients,
             List<String> invalidRecipients) {
     }
 
-    /**
-     * Response message wrapper
-     */
     public static class ResponseMessage<T> {
         private final String status;
         private final String message;
@@ -367,15 +372,11 @@ public class BroadcastOrchestratorServiceImpl {
             return new ResponseMessage<>("ERROR", message, null);
         }
 
-        // Getters
         public String getStatus() { return status; }
         public String getMessage() { return message; }
         public T getData() { return data; }
     }
 
-    /**
-     * Broadcast result data
-     */
     public record BroadcastResult(
             Long broadcastId,
             int validCount,
