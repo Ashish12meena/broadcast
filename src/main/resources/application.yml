@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: messaging
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/aigreentick_schema
+    username: root
+    password: meenagaming12@#
