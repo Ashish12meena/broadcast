@@ -24,7 +24,7 @@ public class BroadcastMedia {
     @Column(nullable = false)
     private String type;
 
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String url;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)

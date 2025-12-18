@@ -2,6 +2,8 @@ package com.aigreentick.services.messaging.broadcast.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -33,10 +35,13 @@ public class BroadcastLog {
     @Column(name = "wa_id")
     private String waId;
 
+    // REMOVED @JdbcTypeCode - this is VARCHAR in database
     @Column(name = "message_status", nullable = false)
     private String messageStatus;
 
+    // KEEP @JdbcTypeCode - this is ENUM in database
     @Column(nullable = false)
+    @JdbcTypeCode(SqlTypes.CHAR)
     private String status;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)

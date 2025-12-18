@@ -2,6 +2,8 @@ package com.aigreentick.services.messaging.broadcast.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -52,12 +54,14 @@ public class Broadcast {
     private LocalDateTime scheduleAt;
 
     @Column(nullable = false)
+    @JdbcTypeCode(SqlTypes.CHAR)
     private String status;
 
-    @Lob
+    // CHANGED: Use columnDefinition instead of @Lob
+    @Column(columnDefinition = "TEXT")
     private String numbers;
 
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String requests;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
@@ -69,4 +73,3 @@ public class Broadcast {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 }
-

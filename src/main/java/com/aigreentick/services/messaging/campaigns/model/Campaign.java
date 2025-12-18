@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -44,7 +46,9 @@ public class Campaign {
     @Column(name = "total", nullable = false)
     private Integer total;
 
+    // Check your database - keep @JdbcTypeCode only if ENUM
     @Column(name = "status", nullable = false)
+    @JdbcTypeCode(SqlTypes.CHAR)
     private String status;
 
     @Column(name = "schedule_at")
@@ -58,5 +62,4 @@ public class Campaign {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
-
 }

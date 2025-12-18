@@ -22,7 +22,6 @@ import com.aigreentick.services.messaging.broadcast.kafka.producer.BroadcastRepo
 import com.aigreentick.services.messaging.broadcast.model.Broadcast;
 import com.aigreentick.services.messaging.report.model.Report;
 import com.aigreentick.services.messaging.report.service.impl.ReportServiceImpl;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,7 +36,6 @@ public class BroadcastOrchestratorServiceImpl {
     private final BroadcastReportProducer broadcastReportProducer;
     private final ReportServiceImpl reportService;
     private final BroadcastServiceImpl broadcastServiceImpl;
-    private final ObjectMapper objectMapper;
 
     @Transactional
     public ResponseMessage<BroadcastResult> handleBroadcast(BroadcastRequest request) {
@@ -80,7 +78,7 @@ public class BroadcastOrchestratorServiceImpl {
             // 4. Create broadcast record 
             Broadcast broadcast = createBroadcast(request, user.getId(), validNumbers.size());
 
-            // 5. Build templates for all recipients
+            // 5. Build templates for all recipients - NOW RETURNS BuildTemplate objects
             TemplateValidationResult validationResult = buildAndValidateTemplates(
                     user.getId(), validNumbers, template, request, broadcast);
 
@@ -153,6 +151,9 @@ public class BroadcastOrchestratorServiceImpl {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * FIXED: Now works with BuildTemplate objects instead of Map
+     */
     private TemplateValidationResult buildAndValidateTemplates(
             Long userId, 
             List<String> validNumbers, 
@@ -164,13 +165,13 @@ public class BroadcastOrchestratorServiceImpl {
         List<String> invalidRecipients = new ArrayList<>();
         
         try {
-            // Build templates using template builder service with ALL required parameters
-            List<Map<String, Object>> allTemplates = templateBuilderService
+            // Build templates - NOW returns List<BuildTemplate>
+            List<BuildTemplate> allTemplates = templateBuilderService
                     .buildSendableTemplates(validNumbers, template, request, userId, broadcast);
 
             // Validate each template
-            List<Map<String, Object>> validTemplates = allTemplates.stream()
-                    .filter(templateMap -> validateTemplate(templateMap, validRecipients, invalidRecipients))
+            List<BuildTemplate> validTemplates = allTemplates.stream()
+                    .filter(buildTemplate -> validateTemplate(buildTemplate, validRecipients, invalidRecipients))
                     .collect(Collectors.toList());
 
             return new TemplateValidationResult(validTemplates, validRecipients, invalidRecipients);
@@ -181,32 +182,31 @@ public class BroadcastOrchestratorServiceImpl {
         }
     }
 
-    @SuppressWarnings("unchecked")
+    /**
+     * FIXED: Now validates BuildTemplate objects directly
+     */
     private boolean validateTemplate(
-            Map<String, Object> templateMap,
+            BuildTemplate buildTemplate,
             List<String> validRecipients,
             List<String> invalidRecipients) {
 
         try {
-            String recipient = (String) templateMap.get("to");
+            String recipient = buildTemplate.getTo();
             
             if (recipient == null || recipient.trim().isEmpty()) {
                 log.warn("Missing recipient in template");
                 return false;
             }
 
-            Map<String, Object> template = (Map<String, Object>) templateMap.get("template");
-            
-            if (template == null) {
+            if (buildTemplate.getTemplate() == null) {
                 log.warn("Template not built for recipient: {}", recipient);
                 invalidRecipients.add(recipient);
                 return false;
             }
 
-            String name = (String) template.get("name");
-            Map<String, Object> language = (Map<String, Object>) template.get("language");
+            String name = buildTemplate.getTemplate().getName();
             
-            if (name == null || name.trim().isEmpty() || language == null) {
+            if (name == null || name.trim().isEmpty()) {
                 log.warn("Incomplete template for recipient: {}", recipient);
                 invalidRecipients.add(recipient);
                 return false;
@@ -217,9 +217,8 @@ public class BroadcastOrchestratorServiceImpl {
 
         } catch (Exception e) {
             log.error("Validation failed for template", e);
-            String recipient = (String) templateMap.get("to");
-            if (recipient != null) {
-                invalidRecipients.add(recipient);
+            if (buildTemplate.getTo() != null) {
+                invalidRecipients.add(buildTemplate.getTo());
             }
             return false;
         }
@@ -267,17 +266,20 @@ public class BroadcastOrchestratorServiceImpl {
         return reports;
     }
 
+    /**
+     * FIXED: Now works with BuildTemplate objects instead of Map
+     */
     private CompletableFuture<Void> publishBroadcastEvents(
             List<Report> reports,
-            List<Map<String, Object>> templates,
+            List<BuildTemplate> templates,
             WhatsappAccount config,
             Long broadcastId, 
             Long userId) {
 
         // Create map for fast lookup by mobile number (recipient)
-        Map<String, Map<String, Object>> templateMap = templates.stream()
+        Map<String, BuildTemplate> templateMap = templates.stream()
                 .collect(Collectors.toMap(
-                    t -> (String) t.get("to"), 
+                    BuildTemplate::getTo, 
                     t -> t, 
                     (a, b) -> a
                 ));
@@ -305,23 +307,19 @@ public class BroadcastOrchestratorServiceImpl {
         return publishFuture;
     }
 
+    /**
+     * FIXED: No conversion needed - templates are already BuildTemplate objects
+     */
     private BroadcastReportEvent createBroadcastReportEvent(
             Report report,
-            Map<String, Map<String, Object>> templateMap,
+            Map<String, BuildTemplate> templateMap,
             WhatsappAccount config,
             Long broadcastId,
             Long userId) {
 
-        Map<String, Object> templateData = templateMap.get(report.getMobile());
-        if (templateData == null) {
-            log.warn("No template found for recipient: {}", report.getMobile());
-            return null;
-        }
-
-        // Convert Map to BuildTemplate object
-        BuildTemplate buildTemplate = convertMapToBuildTemplate(templateData);
+        BuildTemplate buildTemplate = templateMap.get(report.getMobile());
         if (buildTemplate == null) {
-            log.warn("Failed to convert template for recipient: {}", report.getMobile());
+            log.warn("No template found for recipient: {}", report.getMobile());
             return null;
         }
 
@@ -335,20 +333,11 @@ public class BroadcastOrchestratorServiceImpl {
                 buildTemplate);
     }
 
-    @SuppressWarnings("unchecked")
-    private BuildTemplate convertMapToBuildTemplate(Map<String, Object> templateData) {
-        try {
-            // Use ObjectMapper to convert Map to BuildTemplate
-            String json = objectMapper.writeValueAsString(templateData);
-            return objectMapper.readValue(json, BuildTemplate.class);
-        } catch (Exception e) {
-            log.error("Failed to convert template map to BuildTemplate", e);
-            return null;
-        }
-    }
-
+    /**
+     * FIXED: Now uses BuildTemplate instead of Map
+     */
     private record TemplateValidationResult(
-            List<Map<String, Object>> validTemplates,
+            List<BuildTemplate> validTemplates,
             List<String> validRecipients,
             List<String> invalidRecipients) {
     }

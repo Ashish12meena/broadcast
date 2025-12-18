@@ -2,6 +2,8 @@ package com.aigreentick.services.messaging.campaigns.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -33,10 +35,13 @@ public class CampaignLog {
     @Column(name = "wa_id")
     private String waId;
 
+    // Check your database - remove @JdbcTypeCode if VARCHAR
     @Column(name = "message_status")
     private String messageStatus;
 
+    // Check your database - keep @JdbcTypeCode only if ENUM
     @Column(nullable = false)
+    @JdbcTypeCode(SqlTypes.CHAR)
     private String status;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
@@ -48,4 +53,3 @@ public class CampaignLog {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 }
-

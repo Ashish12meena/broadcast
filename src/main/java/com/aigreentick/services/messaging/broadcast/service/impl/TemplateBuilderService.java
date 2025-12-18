@@ -9,10 +9,12 @@ import org.springframework.stereotype.Service;
 
 import com.aigreentick.services.messaging.broadcast.client.dto.Template;
 import com.aigreentick.services.messaging.broadcast.client.dto.TemplateComponent;
-import com.aigreentick.services.messaging.broadcast.client.dto.User;
 import com.aigreentick.services.messaging.broadcast.dto.BroadcastRequest;
+import com.aigreentick.services.messaging.broadcast.dto.build.BuildTemplate;
+import com.aigreentick.services.messaging.broadcast.dto.build.Component;
+import com.aigreentick.services.messaging.broadcast.dto.build.Language;
+import com.aigreentick.services.messaging.broadcast.dto.build.SendableTemplate;
 import com.aigreentick.services.messaging.broadcast.model.Broadcast;
-import com.aigreentick.services.messaging.report.model.Report;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -27,18 +29,17 @@ public class TemplateBuilderService {
     private final ObjectMapper objectMapper;
 
     /**
-     * Build sendable templates for all recipients.
-     * Implements the exact logic from the controller's message building loop.
+     * Build sendable templates for all recipients as BuildTemplate objects.
+     * FIXED: Now returns proper BuildTemplate objects instead of Map
      */
-
-    public List<Map<String, Object>> buildSendableTemplates(
+    public List<BuildTemplate> buildSendableTemplates(
             List<String> validNumbers,
             Template template,
             BroadcastRequest request,
             Long userId,
             Broadcast broadcast) {
 
-        List<Map<String, Object>> sendableTemplates = new ArrayList<>();
+        List<BuildTemplate> sendableTemplates = new ArrayList<>();
 
         String[] variablesArray = request.getVariables() != null
                 ? request.getVariables().split(",")
@@ -47,21 +48,15 @@ public class TemplateBuilderService {
         for (String phoneNumber : validNumbers) {
             phoneNumber = phoneNumber.trim();
 
-            Report broadcastLog = new Report();
-            broadcastLog.setUserId(userId);
-            broadcastLog.setBroadcastId(broadcast.getId());
-            broadcastLog.setMobile(phoneNumber);
-            broadcastLog.setStatus("pending");
-            broadcastLog.setType("template");
-
             List<TemplateComponent> bodyTexts = template.getComponents();
-            List<Map<String, Object>> parameters = new ArrayList<>();
+            List<Component> components = new ArrayList<>();
 
+            // Build header component if media exists
             for (TemplateComponent bodyText : bodyTexts) {
                 if (bodyText.getFormat() != null) {
                     if (request.getMediaUrl() != null && !request.getMediaUrl().isEmpty()) {
-                        Map<String, Object> headerParam = new HashMap<>();
-                        headerParam.put("type", "header");
+                        Component headerComponent = new Component();
+                        headerComponent.setType("header");
 
                         List<Map<String, Object>> paramList = new ArrayList<>();
                         Map<String, Object> mediaParam = new HashMap<>();
@@ -72,68 +67,72 @@ public class TemplateBuilderService {
                         mediaParam.put(request.getMediaType(), mediaObj);
 
                         paramList.add(mediaParam);
-                        headerParam.put("parameters", paramList);
-                        parameters.add(headerParam);
+                        headerComponent.setParameters(paramList);
+                        components.add(headerComponent);
                     }
                 }
             }
 
+            // Build body and button components if variables exist
             if (request.getVariables() != null) {
-                List<Map<String, String>> vars = new ArrayList<>();
+                List<Map<String, Object>> vars = new ArrayList<>();
                 for (String v : variablesArray) {
-                    Map<String, String> varMap = new HashMap<>();
+                    Map<String, Object> varMap = new HashMap<>();
                     varMap.put("type", "text");
                     varMap.put("text", v);
                     vars.add(varMap);
                 }
 
-                Map<String, Object> bodyParam = new HashMap<>();
-                bodyParam.put("type", "body");
-                bodyParam.put("parameters", vars);
-                parameters.add(bodyParam);
+                // Body component
+                Component bodyComponent = new Component();
+                bodyComponent.setType("body");
+                bodyComponent.setParameters(vars);
+                components.add(bodyComponent);
 
+                // Button component for AUTHENTICATION templates
                 if ("AUTHENTICATION".equalsIgnoreCase(template.getCategory().trim())) {
-                    Map<String, Object> buttonParam = new HashMap<>();
-                    buttonParam.put("type", "button");
-                    buttonParam.put("sub_type", "url");
-                    buttonParam.put("index", "0");
+                    Component buttonComponent = new Component();
+                    buttonComponent.setType("button");
+                    buttonComponent.setSubType("url");
+                    buttonComponent.setIndex("0");
 
-                    List<Map<String, String>> buttonParams = new ArrayList<>();
-                    Map<String, String> textParam = new HashMap<>();
+                    List<Map<String, Object>> buttonParams = new ArrayList<>();
+                    Map<String, Object> textParam = new HashMap<>();
                     textParam.put("type", "text");
                     textParam.put("text", vars.isEmpty() ? "" : vars.get(0).get("text"));
                     buttonParams.add(textParam);
 
-                    buttonParam.put("parameters", buttonParams);
-                    parameters.add(buttonParam);
+                    buttonComponent.setParameters(buttonParams);
+                    components.add(buttonComponent);
                 }
             }
 
-            Map<String, Object> data = new HashMap<>();
-            data.put("messaging_product", "whatsapp");
-            data.put("to", phoneNumber);
-            data.put("type", "template");
+            // Build SendableTemplate
+            SendableTemplate sendableTemplate = new SendableTemplate();
+            sendableTemplate.setName(template.getName());
+            sendableTemplate.setLanguage(new Language(template.getLanguage()));
+            sendableTemplate.setComponents(components);
 
-            Map<String, Object> templateData = new HashMap<>();
-            templateData.put("name", template.getName());
-
-            Map<String, String> language = new HashMap<>();
-            language.put("code", template.getLanguage());
-            templateData.put("language", language);
-            templateData.put("components", parameters);
-
-            data.put("template", templateData);
+            // Build final BuildTemplate
+            BuildTemplate buildTemplate = BuildTemplate.builder()
+                    .messagingProduct("whatsapp")
+                    .recipientType("individual")
+                    .to(phoneNumber)
+                    .type("template")
+                    .template(sendableTemplate)
+                    .build();
 
             try {
-                log.info("=== Broadcast jsonData: {}", objectMapper.writeValueAsString(data));
+                log.debug("Built template for {}: {}", 
+                    phoneNumber, 
+                    objectMapper.writeValueAsString(buildTemplate));
             } catch (JsonProcessingException e) {
                 log.error("Failed to serialize template payload", e);
             }
 
-            sendableTemplates.add(data);
+            sendableTemplates.add(buildTemplate);
         }
 
         return sendableTemplates;
     }
-
 }
