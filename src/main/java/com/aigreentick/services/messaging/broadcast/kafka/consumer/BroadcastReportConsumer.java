@@ -42,7 +42,7 @@ public class BroadcastReportConsumer {
     @Qualifier("whatsappExecutor")
     private final ExecutorService whatsappExecutor;
 
-    // Track processed event IDs for idempotency (with size limit)
+    // Track processed event IDs for idempotency
     private final Map<String, Long> processedEventIds = new ConcurrentHashMap<>();
     private static final long IDEMPOTENCY_WINDOW_MS = 3600000; // 1 hour
     private static final int MAX_IDEMPOTENCY_CACHE_SIZE = 10000;
@@ -155,7 +155,7 @@ public class BroadcastReportConsumer {
                     event.getAccessToken());
 
             // 3. Update database with result
-            boolean success = updateReportMessage(event, response, payload);
+            boolean success = updateReportMessage(event, response);
 
             return success;
 
@@ -176,40 +176,11 @@ public class BroadcastReportConsumer {
     }
 
     /**
-     * Check for duplicate events using in-memory cache
-     */
-    private boolean isDuplicate(String eventId) {
-        Long lastProcessed = processedEventIds.get(eventId);
-        if (lastProcessed != null) {
-            long age = System.currentTimeMillis() - lastProcessed;
-            if (age < IDEMPOTENCY_WINDOW_MS) {
-                return true;
-            }
-            // Remove expired entry
-            processedEventIds.remove(eventId);
-        }
-        return false;
-    }
-
-    /**
-     * Mark event as processed and cleanup if cache too large
-     */
-    private void markAsProcessed(String eventId) {
-        processedEventIds.put(eventId, System.currentTimeMillis());
-
-        // Prevent memory leak - cleanup when cache grows too large
-        if (processedEventIds.size() > MAX_IDEMPOTENCY_CACHE_SIZE) {
-            cleanupOldEventIds();
-        }
-    }
-
-    /**
      * Updates the Report entity with WhatsApp API response
      */
     private boolean updateReportMessage(
             BroadcastReportEvent event,
-            FacebookApiResponse<SendTemplateMessageResponse> response,
-            String payload) {
+            FacebookApiResponse<SendTemplateMessageResponse> response) {
 
         try {
             // Serialize response
@@ -217,7 +188,7 @@ public class BroadcastReportConsumer {
 
             boolean success = false;
             String whatsappMessageId = null;
-            MessageStatus status = MessageStatus.FAILED;
+            MessageStatus messageStatus = MessageStatus.FAILED;
 
             // Parse WhatsApp response
             if (response.isSuccess() && response.getData() != null) {
@@ -227,8 +198,11 @@ public class BroadcastReportConsumer {
                     var msg = data.getMessages().get(0);
 
                     whatsappMessageId = msg.getId();
-                    status = MessageStatus.fromValue(
-                            msg.getMessageStatus() != null ? msg.getMessageStatus() : "accepted");
+                    
+                    // Parse message status from response
+                    String statusStr = msg.getMessageStatus();
+                    messageStatus = MessageStatus.fromValue(statusStr != null ? statusStr : "accepted");
+                    
                     success = true;
                 }
             } else {
@@ -239,9 +213,8 @@ public class BroadcastReportConsumer {
             // Update database using optimized query
             int updated = reportService.updateReportMessage(
                     event.getBroadcastReportId(),
-                    payload,
                     responseJson,
-                    status,
+                    messageStatus,
                     whatsappMessageId,
                     LocalDateTime.now());
 
@@ -275,7 +248,6 @@ public class BroadcastReportConsumer {
 
             reportService.updateReportMessage(
                 event.getBroadcastReportId(),
-                null, // payload
                 errorResponse,
                 MessageStatus.FAILED,
                 null, // messageId
@@ -315,6 +287,32 @@ public class BroadcastReportConsumer {
     }
 
     /**
+     * Check for duplicate events using in-memory cache
+     */
+    private boolean isDuplicate(String eventId) {
+        Long lastProcessed = processedEventIds.get(eventId);
+        if (lastProcessed != null) {
+            long age = System.currentTimeMillis() - lastProcessed;
+            if (age < IDEMPOTENCY_WINDOW_MS) {
+                return true;
+            }
+            processedEventIds.remove(eventId);
+        }
+        return false;
+    }
+
+    /**
+     * Mark event as processed and cleanup if cache too large
+     */
+    private void markAsProcessed(String eventId) {
+        processedEventIds.put(eventId, System.currentTimeMillis());
+
+        if (processedEventIds.size() > MAX_IDEMPOTENCY_CACHE_SIZE) {
+            cleanupOldEventIds();
+        }
+    }
+
+    /**
      * Cleanup old event IDs to prevent memory leak
      */
     private void cleanupOldEventIds() {
@@ -336,7 +334,7 @@ public class BroadcastReportConsumer {
         StringBuilder sb = new StringBuilder();
         for (StackTraceElement element : e.getStackTrace()) {
             sb.append(element.toString()).append("\n");
-            if (sb.length() > 2000) break; // Limit size
+            if (sb.length() > 2000) break;
         }
         return sb.toString();
     }

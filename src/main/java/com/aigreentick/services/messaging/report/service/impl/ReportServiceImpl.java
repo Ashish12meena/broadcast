@@ -33,38 +33,40 @@ public class ReportServiceImpl {
     }
 
     /**
-     * Update report message with WhatsApp API response
-     * Uses optimized bulk update query
+     * Update report message with WhatsApp API response.
+     * Converts MessageStatus enum to string for database.
      */
     @Transactional
     public int updateReportMessage(
-            Long broadcastReportId, 
-            String payload, 
+            Long reportId, 
             String responseJson, 
-            MessageStatus status,
+            MessageStatus messageStatus,
             String whatsappMessageId, 
             LocalDateTime now) {
         
         try {
+            // Convert MessageStatus enum to string value
+            String statusValue = messageStatus.getValue();
+            
             int updated = reportRepository.updateReportMessage(
-                    broadcastReportId, 
-                    payload, 
+                    reportId, 
                     responseJson, 
-                    status,
+                    statusValue, // status field
+                    statusValue, // messageStatus field (both same)
                     whatsappMessageId, 
                     now);
 
             if (updated == 0) {
-                log.warn("No report found to update. reportId={}", broadcastReportId);
+                log.warn("No report found to update. reportId={}", reportId);
             } else {
                 log.debug("Updated report. reportId={} status={} messageId={}", 
-                    broadcastReportId, status, whatsappMessageId);
+                    reportId, statusValue, whatsappMessageId);
             }
 
             return updated;
 
         } catch (Exception e) {
-            log.error("Failed to update report message. reportId={}", broadcastReportId, e);
+            log.error("Failed to update report message. reportId={}", reportId, e);
             throw e;
         }
     }
