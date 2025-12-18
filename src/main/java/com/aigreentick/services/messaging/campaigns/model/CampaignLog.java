@@ -2,10 +2,10 @@ package com.aigreentick.services.messaging.campaigns.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
+
+import com.aigreentick.services.messaging.broadcast.enums.CampaignStatus;
 
 @Entity
 @Table(name = "campaign_logs")
@@ -23,26 +23,24 @@ public class CampaignLog {
     @Column(name = "campaign_id", nullable = false)
     private Long campaignId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 20)
     private String mobile;
 
-    @Column(name = "message_id")
+    @Column(name = "message_id", length = 255)
     private String messageId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 50)
     private String type;
 
-    @Column(name = "wa_id")
+    @Column(name = "wa_id", length = 255)
     private String waId;
 
-    // Check your database - remove @JdbcTypeCode if VARCHAR
-    @Column(name = "message_status")
+    @Column(name = "message_status", length = 100)
     private String messageStatus;
 
-    // Check your database - keep @JdbcTypeCode only if ENUM
     @Column(nullable = false)
-    @JdbcTypeCode(SqlTypes.CHAR)
-    private String status;
+    @Builder.Default
+    private CampaignStatus status = CampaignStatus.FAILED;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime createdAt;

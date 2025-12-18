@@ -17,6 +17,8 @@ import com.aigreentick.services.messaging.broadcast.client.service.TemplateServi
 import com.aigreentick.services.messaging.broadcast.client.service.UserService;
 import com.aigreentick.services.messaging.broadcast.dto.BroadcastRequest;
 import com.aigreentick.services.messaging.broadcast.dto.build.BuildTemplate;
+import com.aigreentick.services.messaging.broadcast.enums.BroadcastStatus;
+import com.aigreentick.services.messaging.broadcast.enums.Platform;
 import com.aigreentick.services.messaging.broadcast.kafka.event.BroadcastReportEvent;
 import com.aigreentick.services.messaging.broadcast.kafka.producer.BroadcastReportProducer;
 import com.aigreentick.services.messaging.broadcast.model.Broadcast;
@@ -230,9 +232,9 @@ public class BroadcastOrchestratorServiceImpl {
                 .templateId(request.getTemplateId())
                 .countryId(request.getCountryId())
                 .campname(request.getCampName())
-                .isMedia(request.getIsMedia() != null ? request.getIsMedia().toString() : "false")
+                .isMedia(request.getIsMedia())
                 .total(totalRecipients)
-                .status("PROCESSING")
+                .status(BroadcastStatus.PENDING)
                 .build();
 
         return broadcastServiceImpl.save(broadcast);
@@ -253,8 +255,7 @@ public class BroadcastOrchestratorServiceImpl {
                     .type("TEMPLATE")
                     .status("PENDING")
                     .messageStatus("PENDING")
-                    .paymentStatus(0)
-                    .platform("WHATSAPP")
+                    .platform(Platform.WEB)
                     .build();
 
             Report saved = reportService.save(report);

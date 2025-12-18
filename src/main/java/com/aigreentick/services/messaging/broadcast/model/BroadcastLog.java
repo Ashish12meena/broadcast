@@ -2,10 +2,10 @@ package com.aigreentick.services.messaging.broadcast.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
+
+import com.aigreentick.services.messaging.broadcast.enums.BroadcastStatus;
 
 @Entity
 @Table(name = "broadcast_logs")
@@ -19,30 +19,27 @@ public class BroadcastLog {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
+    
     @Column(name = "broadcast_id", nullable = false)
     private Long broadcastId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 20)
     private String mobile;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 50)
     private String type;
 
-    @Column(name = "message_id")
+    @Column(name = "message_id", length = 255)
     private String messageId;
 
-    @Column(name = "wa_id")
+    @Column(name = "wa_id", length = 255)
     private String waId;
 
-    // REMOVED @JdbcTypeCode - this is VARCHAR in database
-    @Column(name = "message_status", nullable = false)
+    @Column(name = "message_status", nullable = false, length = 50)
     private String messageStatus;
 
-    // KEEP @JdbcTypeCode - this is ENUM in database
     @Column(nullable = false)
-    @JdbcTypeCode(SqlTypes.CHAR)
-    private String status;
+    private BroadcastStatus status;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime createdAt;

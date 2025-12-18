@@ -21,10 +21,11 @@ public class BroadcastMedia {
     @Column(name = "broadcast_id", nullable = false)
     private Long broadcastId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 50)
     private String type;
 
-    @Column(columnDefinition = "TEXT")
+    @Lob
+    @Column(columnDefinition = "text")
     private String url;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)

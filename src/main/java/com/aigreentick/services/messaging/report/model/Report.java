@@ -2,13 +2,18 @@ package com.aigreentick.services.messaging.report.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
+import com.aigreentick.services.messaging.broadcast.enums.Platform;
+
 @Entity
-@Table(name = "reports")
+@Table(
+    name = "reports",
+    indexes = {
+        @Index(name = "idx_message_id", columnList = "message_id")
+    }
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -35,31 +40,23 @@ public class Report {
     @Column(name = "tag_log_id")
     private Long tagLogId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 20)
     private String mobile;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 50)
     private String type;
 
-    @Column(name = "message_id")
+    @Column(name = "message_id", length = 255)
     private String messageId;
 
-    @Column(name = "wa_id")
+    @Column(name = "wa_id", length = 255)
     private String waId;
 
-    @Column(name = "message_status")
+    @Column(name = "message_status", length = 255)
     private String messageStatus;
 
     @Column(nullable = false, length = 522)
-    @JdbcTypeCode(SqlTypes.CHAR)
     private String status;
-
-    // CHANGED: Use columnDefinition instead of @Lob
-    @Column(columnDefinition = "TEXT")
-    private String payload;
-
-    @Column(name = "payment_status", nullable = false)
-    private Integer paymentStatus;
 
     @Column(columnDefinition = "json")
     private String response;
@@ -68,7 +65,7 @@ public class Report {
     private String contact;
 
     @Column(nullable = false)
-    private String platform;
+    private Platform platform;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime createdAt;

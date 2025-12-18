@@ -1,21 +1,21 @@
 package com.aigreentick.services.messaging.campaigns.model;
 
+
+
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
+import com.aigreentick.services.messaging.broadcast.enums.CampaignStatus;
+
 @Entity
-@Data
-@Builder
+@Table(name = "campaigns")
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "campaigns")
+@Builder
 public class Campaign {
 
     @Id
@@ -28,38 +28,41 @@ public class Campaign {
     @Column(name = "template_id", nullable = false)
     private Long templateId;
 
-    @Column(name = "whatsapp")
+    @Column
     private Integer whatsapp;
 
     @Column(name = "country_id", nullable = false)
     private Long countryId;
 
-    @Column(name = "campname", nullable = false)
+    @Column(name = "campname", nullable = false, length = 255)
     private String campname;
 
     @Column(name = "is_media", nullable = false)
-    private String isMedia;
+    private Boolean isMedia;
 
-    @Column(name = "col_name")
+    @Column(name = "col_name", length = 255)
     private String colName;
 
-    @Column(name = "total", nullable = false)
+    @Column(nullable = false)
     private Integer total;
 
-    // Check your database - keep @JdbcTypeCode only if ENUM
-    @Column(name = "status", nullable = false)
-    @JdbcTypeCode(SqlTypes.CHAR)
-    private String status;
+    @Column(nullable = false)
+    @Builder.Default
+    private CampaignStatus status = CampaignStatus.FAILED;
 
+    // TIMESTAMP NULL DEFAULT NULL
     @Column(name = "schedule_at")
     private LocalDateTime scheduleAt;
 
+    // TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    // TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     @Column(name = "updated_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime updatedAt;
 
+    // TIMESTAMP NULL DEFAULT NULL
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 }

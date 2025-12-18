@@ -1,5 +1,6 @@
 package com.aigreentick.services.messaging.campaigns.model;
 
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -21,10 +22,11 @@ public class CampaignMedia {
     @Column(name = "campaign_id", nullable = false)
     private Long campaignId;
 
-    @Column
+    @Column(length = 50)
     private String type;
 
-    @Column(columnDefinition = "TEXT")
+    @Lob
+    @Column(columnDefinition = "longtext")
     private String url;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
