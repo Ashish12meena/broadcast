@@ -18,6 +18,7 @@ import com.aigreentick.services.messaging.broadcast.client.service.UserService;
 import com.aigreentick.services.messaging.broadcast.dto.BroadcastRequest;
 import com.aigreentick.services.messaging.broadcast.dto.build.BuildTemplate;
 import com.aigreentick.services.messaging.broadcast.enums.BroadcastStatus;
+import com.aigreentick.services.messaging.broadcast.enums.IsMediaStatus;
 import com.aigreentick.services.messaging.broadcast.enums.Platform;
 import com.aigreentick.services.messaging.broadcast.kafka.event.BroadcastReportEvent;
 import com.aigreentick.services.messaging.broadcast.kafka.producer.BroadcastReportProducer;
@@ -232,7 +233,7 @@ public class BroadcastOrchestratorServiceImpl {
                 .templateId(request.getTemplateId())
                 .countryId(request.getCountryId())
                 .campname(request.getCampName())
-                .isMedia(request.getIsMedia())
+                .isMedia(request.getIsMedia() ? IsMediaStatus.YES : IsMediaStatus.NO)
                 .total(totalRecipients)
                 .status(BroadcastStatus.PENDING)
                 .build();
@@ -255,7 +256,7 @@ public class BroadcastOrchestratorServiceImpl {
                     .type("TEMPLATE")
                     .status("PENDING")
                     .messageStatus("PENDING")
-                    .platform(Platform.WEB)
+                    .platform(Platform.web)
                     .build();
 
             Report saved = reportService.save(report);

@@ -1,13 +1,12 @@
 package com.aigreentick.services.messaging.broadcast.enums;
 
-public enum BroadcastStatus {
-    FAILED("0"),
-    PENDING("1"),
-    COMPLETED("2");
+public enum IsMediaStatus {
+    NO("0"),
+    YES("1");
     
     private final String value;
     
-    BroadcastStatus(String value) {
+    IsMediaStatus(String value) {
         this.value = value;
     }
     

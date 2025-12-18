@@ -1,11 +1,19 @@
 package com.aigreentick.services.messaging.broadcast.enums;
 
 public enum BroadcastLogStatus {
-    success,  // lowercase matches DB
+    failed,
     pending,
-    failed;
+    success;
     
+    // Helper method if you need it
     public static BroadcastLogStatus fromString(String value) {
-        return valueOf(value.toLowerCase());
+        if (value == null) {
+            return pending;
+        }
+        try {
+            return valueOf(value.toLowerCase());
+        } catch (IllegalArgumentException e) {
+            return pending;
+        }
     }
 }
