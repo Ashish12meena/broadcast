@@ -175,11 +175,11 @@ public class BroadcastOrchestratorServiceImpl {
         
         try {
             // Build templates using template builder service
-            List<BuildTemplate> allTemplates = templateBuilderService
+            List<Map<String, Object>> allTemplates = templateBuilderService
                     .buildSendableTemplates(validNumbers, template, request);
 
             // Validate each template
-            List<BuildTemplate> validTemplates = allTemplates.stream()
+            List<Map<String, Object>> validTemplates = allTemplates.stream()
                     .filter(req -> validateTemplate(req, validRecipients, invalidRecipients))
                     .collect(Collectors.toList());
 
@@ -195,7 +195,7 @@ public class BroadcastOrchestratorServiceImpl {
      * Validates a single template and categorizes the recipient
      */
     private boolean validateTemplate(
-            BuildTemplate request,
+            Map<String, Object> request,
             List<String> validRecipients,
             List<String> invalidRecipients) {
 
@@ -278,13 +278,13 @@ public class BroadcastOrchestratorServiceImpl {
      */
     private CompletableFuture<Void> publishBroadcastEvents(
             List<Report> reports,
-            List<BuildTemplate> templates,
+            List<Map<String, Object>> templates,
             WhatsappAccount config,
             Long broadcastId, 
             Long userId) {
 
         // Create map for fast lookup
-        Map<String, BuildTemplate> templateMap = templates.stream()
+        Map<String, Map<String, Object>> templateMap = templates.stream()
                 .collect(Collectors.toMap(BuildTemplate::getTo, t -> t, (a, b) -> a));
 
         // Create Kafka events

@@ -1,4 +1,5 @@
 spring:
+  active: stress-test
   application:
     name: messaging
 
