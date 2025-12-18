@@ -10,8 +10,10 @@ public class TemplateBuilderService {
 
     public List<BuildTemplate> buildSendableTemplates(List<String> validNumbers, Template template,
             BroadcastRequest request) {
-        // TODO Auto-generated method stub
+
+                
         throw new UnsupportedOperationException("Unimplemented method 'buildSendableTemplates'");
     }
+
 
 }
