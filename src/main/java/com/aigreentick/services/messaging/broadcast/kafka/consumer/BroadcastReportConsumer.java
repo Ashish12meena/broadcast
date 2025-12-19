@@ -20,6 +20,7 @@ import com.aigreentick.services.messaging.broadcast.dto.response.SendTemplateMes
 import com.aigreentick.services.messaging.broadcast.enums.MessageStatus;
 import com.aigreentick.services.messaging.broadcast.kafka.event.BroadcastReportEvent;
 import com.aigreentick.services.messaging.broadcast.service.impl.ReportServiceImpl;
+
 import com.aigreentick.services.messaging.config.ExecutorConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 

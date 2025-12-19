@@ -78,6 +78,16 @@ kafka:
     max-attempts: 3
     backoff-delay-ms: 5000
 
+# Synchronized Batch Configuration
+batch:
+  # Number of requests to buffer before processing
+  # Matches semaphore size for optimal throughput
+  size: 80
+  
+  # Timeout for partial batch (milliseconds)
+  # If buffer doesn't fill to 80 within this time, process anyway
+  timeout-ms: 5000
+
 # Campaign Executor Configuration
 campaign:
   max-concurrent-users: 100
@@ -99,7 +109,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health,info,metrics,prometheus,batch-stats
   metrics:
     export:
       prometheus:
