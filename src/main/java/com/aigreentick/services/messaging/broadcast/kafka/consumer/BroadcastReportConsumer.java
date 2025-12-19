@@ -1,6 +1,5 @@
 package com.aigreentick.services.messaging.broadcast.kafka.consumer;
 
-import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -19,8 +18,7 @@ import com.aigreentick.services.messaging.broadcast.client.service.impl.Whatsapp
 import com.aigreentick.services.messaging.broadcast.dto.response.SendTemplateMessageResponse;
 import com.aigreentick.services.messaging.broadcast.enums.MessageStatus;
 import com.aigreentick.services.messaging.broadcast.kafka.event.BroadcastReportEvent;
-import com.aigreentick.services.messaging.broadcast.service.impl.ReportServiceImpl;
-
+import com.aigreentick.services.messaging.broadcast.service.impl.BatchUpdateService;
 import com.aigreentick.services.messaging.config.ExecutorConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -36,7 +34,7 @@ public class BroadcastReportConsumer {
     private final ConcurrentHashMap<String, Long> semaphoreLastUsed;
     private final ObjectMapper objectMapper;
     private final WhatsappClient whatsappClient;
-    private final ReportServiceImpl reportService;
+    private final BatchUpdateService batchUpdateService;
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
     @Qualifier("whatsappExecutor")
@@ -90,11 +88,11 @@ public class BroadcastReportConsumer {
                 event.getBroadcastId(), event.getRecipient(), userSemaphore.availablePermits());
 
             try {
-                // Process message and get result
+                // Process message - this will WAIT until batch is complete
                 boolean success = processMessage(event);
                 
                 if (success) {
-                    log.debug("Message sent successfully. broadcastId={} recipient={} duration={}ms",
+                    log.debug("Message processed successfully. broadcastId={} recipient={} duration={}ms",
                         event.getBroadcastId(), event.getRecipient(), 
                         System.currentTimeMillis() - startTime);
                 } else {
@@ -135,7 +133,7 @@ public class BroadcastReportConsumer {
     }
 
     /**
-     * Core business logic: Send WhatsApp message and update database
+     * Core business logic: Send WhatsApp message and batch update database
      */
     private boolean processMessage(BroadcastReportEvent event) {
         try {
@@ -153,8 +151,8 @@ public class BroadcastReportConsumer {
                     event.getPhoneNumberId(),
                     event.getAccessToken());
 
-            // Update database with result
-            boolean success = updateReportMessage(event, response);
+            // Add to batch and WAIT for batch processing
+            boolean success = addToBatchUpdate(event, response);
 
             return success;
 
@@ -175,11 +173,11 @@ public class BroadcastReportConsumer {
     }
 
     /**
-     * Updates Report using (broadcastId + mobile)
+     * Add update to batch and WAIT for batch to complete
      */
-    private boolean updateReportMessage(
+    private boolean addToBatchUpdate(
             BroadcastReportEvent event,
-            FacebookApiResponse<SendTemplateMessageResponse> response) {
+            FacebookApiResponse<SendTemplateMessageResponse> response) throws InterruptedException {
 
         try {
             // Serialize response
@@ -209,32 +207,27 @@ public class BroadcastReportConsumer {
                     event.getBroadcastId(), event.getRecipient(), response.getErrorMessage());
             }
 
-            // Update using (broadcastId + mobile)
-            int updated = reportService.updateReportByBroadcastIdAndMobile(
+            // Add to batch - THIS BLOCKS until batch is processed
+            batchUpdateService.addUpdateAndWait(
                     event.getBroadcastId(),
                     event.getRecipient(),
                     responseJson,
                     messageStatus,
-                    whatsappMessageId,
-                    LocalDateTime.now());
+                    whatsappMessageId);
 
-            if (updated == 0) {
-                log.error("Failed to update report - no rows affected. broadcastId={} mobile={}", 
-                    event.getBroadcastId(), event.getRecipient());
-                return false;
-            }
+            return success;
 
-            return updated > 0 && success;
-
+        } catch (InterruptedException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Failed to update report message. broadcastId={} mobile={}", 
+            log.error("Failed to add to batch update. broadcastId={} mobile={}", 
                 event.getBroadcastId(), event.getRecipient(), e);
             return false;
         }
     }
 
     /**
-     * Update report with error using (broadcastId + mobile)
+     * Update report with error (direct update, not batched)
      */
     private void updateReportMessageWithError(BroadcastReportEvent event, Exception error) {
         try {
@@ -246,13 +239,12 @@ public class BroadcastReportConsumer {
                 )
             );
 
-            reportService.updateReportByBroadcastIdAndMobile(
+            batchUpdateService.addUpdateAndWait(
                 event.getBroadcastId(),
                 event.getRecipient(),
                 errorResponse,
                 MessageStatus.FAILED,
-                null, // messageId
-                LocalDateTime.now()
+                null
             );
 
         } catch (Exception e) {
