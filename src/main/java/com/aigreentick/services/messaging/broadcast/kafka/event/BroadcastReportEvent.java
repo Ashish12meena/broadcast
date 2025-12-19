@@ -2,14 +2,12 @@ package com.aigreentick.services.messaging.broadcast.kafka.event;
 
 import java.util.UUID;
 
-import com.aigreentick.services.messaging.broadcast.dto.build.BuildTemplate;
 import com.aigreentick.services.messaging.broadcast.enums.MessageStatus;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
 
 @Data
 @Builder
@@ -18,9 +16,7 @@ import lombok.NoArgsConstructor;
 public class BroadcastReportEvent {
     private String eventId; // Unique event identifier
     
-    private Long broadcstId; // Campaign this message belongs to
-    
-    private Long broadcastReportId; // MongoDB CampaignMessages ID
+    private Long broadcastId; // Campaign this message belongs to
     
     private Long userId;
     
@@ -30,7 +26,7 @@ public class BroadcastReportEvent {
     
     private String recipient; // Phone number
     
-    private BuildTemplate buildTemplateReqest; // Template message to send
+    private String payload; // Pre-built template payload as JSON string
     
     private MessageStatus status; // Current status
     
@@ -41,31 +37,28 @@ public class BroadcastReportEvent {
     private Integer priority; // Message priority (optional)
     
     /**
-     * Creates a new event for a campaign message.
+     * Creates event for dispatch flow (pre-built payload)
      */
-    public static BroadcastReportEvent create(
+    public static BroadcastReportEvent createForDispatch(
             Long broadcastId,
-            Long broadcastReportId,
             Long userId,
             String phoneNumberId,
             String accessToken,
             String recipient,
-            BuildTemplate buildTemplateReqest) {
+            String payload) {
         
         return BroadcastReportEvent.builder()
                 .eventId(UUID.randomUUID().toString())
-                .broadcstId(broadcastId)
-                .broadcastReportId(broadcastReportId)
+                .broadcastId(broadcastId)
                 .userId(userId)
                 .phoneNumberId(phoneNumberId)
                 .accessToken(accessToken)
                 .recipient(recipient)
-                .buildTemplateReqest(buildTemplateReqest)
+                .payload(payload)
                 .status(MessageStatus.PENDING)
                 .retryCount(0)
                 .timestamp(System.currentTimeMillis())
                 .priority(0)
                 .build();
     }
-    
 }

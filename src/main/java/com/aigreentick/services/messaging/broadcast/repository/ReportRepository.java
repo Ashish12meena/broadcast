@@ -11,6 +11,10 @@ import com.aigreentick.services.messaging.broadcast.model.Report;
 
 public interface ReportRepository extends JpaRepository<Report, Long> {
     
+    /**
+     * Update report by broadcastId + mobile (for dispatch flow)
+     * Reports are created by another service, we just update them
+     */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
                 UPDATE Report r
@@ -19,10 +23,12 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
                     r.messageStatus = :messageStatus,
                     r.messageId = COALESCE(:messageId, r.messageId),
                     r.updatedAt = :updatedAt
-                WHERE r.id = :id
+                WHERE r.broadcastId = :broadcastId 
+                  AND r.mobile = :mobile
             """)
-    int updateReportMessage(
-            @Param("id") Long id,
+    int updateReportByBroadcastIdAndMobile(
+            @Param("broadcastId") Long broadcastId,
+            @Param("mobile") String mobile,
             @Param("response") String response,
             @Param("status") String status,
             @Param("messageStatus") String messageStatus,

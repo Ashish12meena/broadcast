@@ -7,9 +7,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.aigreentick.services.messaging.broadcast.dto.BroadcastRequest;
+import com.aigreentick.services.messaging.broadcast.dto.BroadcastDispatchRequestDto;
 import com.aigreentick.services.messaging.broadcast.service.impl.BroadcastOrchestratorServiceImpl;
-import com.aigreentick.services.messaging.broadcast.service.impl.BroadcastOrchestratorServiceImpl.BroadcastResult;
 import com.aigreentick.services.messaging.broadcast.service.impl.BroadcastOrchestratorServiceImpl.ResponseMessage;
 
 import jakarta.validation.Valid;
@@ -18,7 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * REST Controller for broadcast operations.
- * Provides endpoints to initiate and manage WhatsApp broadcasts.
+ * Handles dispatching pre-built WhatsApp templates to Kafka.
  */
 @Slf4j
 @RestController
@@ -29,15 +28,35 @@ public class BroadcastController {
     private final BroadcastOrchestratorServiceImpl broadcastOrchestrator;
 
     /**
-     * Initiate a new broadcast campaign.
+     * Dispatch pre-built templates to Kafka.
+     * Reports are already created by another service.
+     * This endpoint just publishes to Kafka and returns immediately.
      * 
-     * @param request Broadcast request containing template, recipients, etc.
-     * @return Response with broadcast ID and status
+     * @param request Dispatch request with pre-built payloads
+     * @return Response with dispatch status
      */
-    @PostMapping
-    public ResponseEntity<ResponseMessage<BroadcastResult>> initiateBroadcast(
-            @RequestBody BroadcastRequest request) {
+    @PostMapping("/dispatch")
+    public ResponseEntity<ResponseMessage<DispatchResult>> dispatchBroadcast(
+            @Valid @RequestBody BroadcastDispatchRequestDto request) {
+        
+        log.info("=== Dispatch Request Received ===");
+        log.info("Items count: {}", request.getItems() != null ? request.getItems().size() : 0);
 
+        try {
+            ResponseMessage<DispatchResult> response = broadcastOrchestrator.handleDispatch(request);
+            
+            if ("SUCCESS".equals(response.getStatus())) {
+                return ResponseEntity.ok(response);
+            } else {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            }
+            
+        } catch (Exception e) {
+            log.error("Dispatch failed with exception", e);
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ResponseMessage.error("Dispatch failed: " + e.getMessage()));
+        }
     }
 
     /**
@@ -47,4 +66,13 @@ public class BroadcastController {
     public ResponseEntity<String> health() {
         return ResponseEntity.ok("Broadcast service is running");
     }
+
+    /**
+     * Response for dispatch endpoint
+     */
+    public record DispatchResult(
+            int totalDispatched,
+            int failedCount,
+            String message
+    ) {}
 }

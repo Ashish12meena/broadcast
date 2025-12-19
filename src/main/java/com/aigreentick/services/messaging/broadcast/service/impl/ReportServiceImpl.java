@@ -18,27 +18,13 @@ public class ReportServiceImpl {
     private final ReportRepository reportRepository;
 
     /**
-     * Save new report entry
+     * Update report by broadcastId + mobile (for dispatch flow)
+     * Used when reports are created by another service
      */
     @Transactional
-    public Report save(Report report) {
-        try {
-            Report saved = reportRepository.save(report);
-            log.debug("Saved report. id={} mobile={}", saved.getId(), saved.getMobile());
-            return saved;
-        } catch (Exception e) {
-            log.error("Failed to save report. mobile={}", report.getMobile(), e);
-            throw e;
-        }
-    }
-
-    /**
-     * Update report message with WhatsApp API response.
-     * Converts MessageStatus enum to string for database.
-     */
-    @Transactional
-    public int updateReportMessage(
-            Long reportId, 
+    public int updateReportByBroadcastIdAndMobile(
+            Long broadcastId,
+            String mobile,
             String responseJson, 
             MessageStatus messageStatus,
             String whatsappMessageId, 
@@ -48,8 +34,9 @@ public class ReportServiceImpl {
             // Convert MessageStatus enum to string value
             String statusValue = messageStatus.getValue();
             
-            int updated = reportRepository.updateReportMessage(
-                    reportId, 
+            int updated = reportRepository.updateReportByBroadcastIdAndMobile(
+                    broadcastId,
+                    mobile,
                     responseJson, 
                     statusValue, // status field
                     statusValue, // messageStatus field (both same)
@@ -57,16 +44,18 @@ public class ReportServiceImpl {
                     now);
 
             if (updated == 0) {
-                log.warn("No report found to update. reportId={}", reportId);
+                log.warn("No report found to update. broadcastId={} mobile={}", 
+                    broadcastId, mobile);
             } else {
-                log.debug("Updated report. reportId={} status={} messageId={}", 
-                    reportId, statusValue, whatsappMessageId);
+                log.debug("Updated report. broadcastId={} mobile={} status={} messageId={}", 
+                    broadcastId, mobile, statusValue, whatsappMessageId);
             }
 
             return updated;
 
         } catch (Exception e) {
-            log.error("Failed to update report message. reportId={}", reportId, e);
+            log.error("Failed to update report by broadcastId+mobile. broadcastId={} mobile={}", 
+                broadcastId, mobile, e);
             throw e;
         }
     }

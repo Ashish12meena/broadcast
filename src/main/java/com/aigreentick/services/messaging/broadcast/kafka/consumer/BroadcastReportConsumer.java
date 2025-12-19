@@ -21,7 +21,6 @@ import com.aigreentick.services.messaging.broadcast.enums.MessageStatus;
 import com.aigreentick.services.messaging.broadcast.kafka.event.BroadcastReportEvent;
 import com.aigreentick.services.messaging.broadcast.service.impl.ReportServiceImpl;
 import com.aigreentick.services.messaging.config.ExecutorConfig;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
@@ -87,7 +86,7 @@ public class BroadcastReportConsumer {
             userSemaphore.acquire();
             
             log.debug("Acquired semaphore. broadcastId={} recipient={} availablePermits={}", 
-                event.getBroadcstId(), event.getRecipient(), userSemaphore.availablePermits());
+                event.getBroadcastId(), event.getRecipient(), userSemaphore.availablePermits());
 
             try {
                 // Process message and get result
@@ -95,11 +94,11 @@ public class BroadcastReportConsumer {
                 
                 if (success) {
                     log.debug("Message sent successfully. broadcastId={} recipient={} duration={}ms",
-                        event.getBroadcstId(), event.getRecipient(), 
+                        event.getBroadcastId(), event.getRecipient(), 
                         System.currentTimeMillis() - startTime);
                 } else {
                     log.warn("Message processing failed. broadcastId={} recipient={} duration={}ms",
-                        event.getBroadcstId(), event.getRecipient(), 
+                        event.getBroadcastId(), event.getRecipient(), 
                         System.currentTimeMillis() - startTime);
                 }
 
@@ -113,18 +112,18 @@ public class BroadcastReportConsumer {
                 // CRITICAL: Always release semaphore
                 userSemaphore.release();
                 log.debug("Released semaphore. broadcastId={} availablePermits={}", 
-                    event.getBroadcstId(), userSemaphore.availablePermits());
+                    event.getBroadcastId(), userSemaphore.availablePermits());
             }
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Thread interrupted while processing. broadcastId={} eventId={} partition={} offset={}",
-                    event.getBroadcstId(), event.getEventId(), partition, offset, e);
+                    event.getBroadcastId(), event.getEventId(), partition, offset, e);
             // Don't acknowledge - message will be redelivered
 
         } catch (Exception e) {
             log.error("Critical error processing message. broadcastId={} eventId={} partition={} offset={}",
-                    event.getBroadcstId(), event.getEventId(), partition, offset, e);
+                    event.getBroadcastId(), event.getEventId(), partition, offset, e);
             
             // Send to DLQ for manual inspection
             sendToDLQ(event, e);
@@ -139,36 +138,35 @@ public class BroadcastReportConsumer {
      */
     private boolean processMessage(BroadcastReportEvent event) {
         try {
-            // 1. Serialize template payload
-            String payload = objectMapper
-                    .setSerializationInclusion(JsonInclude.Include.NON_NULL)
-                    .writeValueAsString(event.getBuildTemplateReqest());
+            // Validate payload exists
+            if (event.getPayload() == null || event.getPayload().isEmpty()) {
+                log.error("Event has no payload. eventId={}", event.getEventId());
+                return false;
+            }
 
-            log.debug("Sending WhatsApp message. recipient={} templateName={}", 
-                event.getRecipient(), 
-                event.getBuildTemplateReqest().getTemplate().getName());
+            log.debug("Sending WhatsApp message. recipient={}", event.getRecipient());
 
-            // 2. Call WhatsApp API
+            // Call WhatsApp API with pre-built payload
             FacebookApiResponse<SendTemplateMessageResponse> response = whatsappClient.sendMessage(
-                    payload,
+                    event.getPayload(),
                     event.getPhoneNumberId(),
                     event.getAccessToken());
 
-            // 3. Update database with result
+            // Update database with result
             boolean success = updateReportMessage(event, response);
 
             return success;
 
         } catch (Exception e) {
             log.error("Error in message processing. broadcastId={} recipient={} error={}",
-                    event.getBroadcstId(), event.getRecipient(), e.getMessage(), e);
+                    event.getBroadcastId(), event.getRecipient(), e.getMessage(), e);
             
             // Update database with failure status
             try {
                 updateReportMessageWithError(event, e);
             } catch (Exception dbError) {
-                log.error("Failed to update database with error status. reportId={}", 
-                    event.getBroadcastReportId(), dbError);
+                log.error("Failed to update database with error status. broadcastId={} mobile={}", 
+                    event.getBroadcastId(), event.getRecipient(), dbError);
             }
             
             return false;
@@ -176,7 +174,7 @@ public class BroadcastReportConsumer {
     }
 
     /**
-     * Updates the Report entity with WhatsApp API response
+     * Updates Report using (broadcastId + mobile)
      */
     private boolean updateReportMessage(
             BroadcastReportEvent event,
@@ -206,35 +204,36 @@ public class BroadcastReportConsumer {
                     success = true;
                 }
             } else {
-                log.warn("WhatsApp API returned error. reportId={} error={}", 
-                    event.getBroadcastReportId(), response.getErrorMessage());
+                log.warn("WhatsApp API returned error. broadcastId={} mobile={} error={}", 
+                    event.getBroadcastId(), event.getRecipient(), response.getErrorMessage());
             }
 
-            // Update database using optimized query
-            int updated = reportService.updateReportMessage(
-                    event.getBroadcastReportId(),
+            // Update using (broadcastId + mobile)
+            int updated = reportService.updateReportByBroadcastIdAndMobile(
+                    event.getBroadcastId(),
+                    event.getRecipient(),
                     responseJson,
                     messageStatus,
                     whatsappMessageId,
                     LocalDateTime.now());
 
             if (updated == 0) {
-                log.error("Failed to update report - no rows affected. reportId={}", 
-                    event.getBroadcastReportId());
+                log.error("Failed to update report - no rows affected. broadcastId={} mobile={}", 
+                    event.getBroadcastId(), event.getRecipient());
                 return false;
             }
 
             return updated > 0 && success;
 
         } catch (Exception e) {
-            log.error("Failed to update report message. reportId={}", 
-                event.getBroadcastReportId(), e);
+            log.error("Failed to update report message. broadcastId={} mobile={}", 
+                event.getBroadcastId(), event.getRecipient(), e);
             return false;
         }
     }
 
     /**
-     * Update report with error information when WhatsApp call fails
+     * Update report with error using (broadcastId + mobile)
      */
     private void updateReportMessageWithError(BroadcastReportEvent event, Exception error) {
         try {
@@ -246,8 +245,9 @@ public class BroadcastReportConsumer {
                 )
             );
 
-            reportService.updateReportMessage(
-                event.getBroadcastReportId(),
+            reportService.updateReportByBroadcastIdAndMobile(
+                event.getBroadcastId(),
+                event.getRecipient(),
                 errorResponse,
                 MessageStatus.FAILED,
                 null, // messageId
@@ -255,8 +255,8 @@ public class BroadcastReportConsumer {
             );
 
         } catch (Exception e) {
-            log.error("Failed to update report with error. reportId={}", 
-                event.getBroadcastReportId(), e);
+            log.error("Failed to update report with error. broadcastId={} mobile={}", 
+                event.getBroadcastId(), event.getRecipient(), e);
         }
     }
 
@@ -274,15 +274,15 @@ public class BroadcastReportConsumer {
             );
 
             kafkaTemplate.send("broadcast-messages-dlq", 
-                String.valueOf(event.getBroadcstId()), 
+                String.valueOf(event.getBroadcastId()), 
                 dlqMessage);
 
             log.info("Sent message to DLQ. broadcastId={} eventId={}", 
-                event.getBroadcstId(), event.getEventId());
+                event.getBroadcastId(), event.getEventId());
 
         } catch (Exception e) {
             log.error("Failed to send message to DLQ. broadcastId={} eventId={}", 
-                event.getBroadcstId(), event.getEventId(), e);
+                event.getBroadcastId(), event.getEventId(), e);
         }
     }
 
