@@ -4,7 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.aigreentick.services.messaging.broadcast.model.ContactMessage;
-import com.aigreentick.services.messaging.broadcast.repository.ConatactMessageRepository;
+import com.aigreentick.services.messaging.broadcast.repository.ContactMessageRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class ContactMessagesServiceImpl {
-    private final ConatactMessageRepository contactMessageRepository;
+    private final ContactMessageRepository contactMessageRepository;
 
     /**
      * Save contact message with proper error handling

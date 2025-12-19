@@ -18,6 +18,6 @@ public class BroadcastRequest {
     private String mediaType;
     private String mediaUrl;
     private String scheduleDate;
-    private String variables; // Can be String or List<String>
+    private String variables; 
     private List<Map<String, Object>> carouselCards;
 }

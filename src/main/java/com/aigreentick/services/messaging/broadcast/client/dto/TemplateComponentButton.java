@@ -1,26 +1,20 @@
 package com.aigreentick.services.messaging.broadcast.client.dto;
 
-import java.util.List;
-
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public  class TemplateComponent {
+public class TemplateComponentButton {
     private Long id;
     private Long template_id;
+    private Long component_id;
     private String type;
-    private String format;
     private String text;
-    private String image_url;
-    private List<TemplateComponentButton> buttons;
-    private List<TemplateText> texts;
-    private List<CarouselCards> carousel_cards;
-
+    private String url;
+    private String number;
 }

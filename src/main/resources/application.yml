@@ -1,5 +1,6 @@
 spring:
-  active: stress-test
+  profiles:
+    active: stress-test
   application:
     name: messaging
 
@@ -86,7 +87,7 @@ campaign:
 # WhatsApp API Configuration
 whatsapp:
   api:
-    base-url: https://graph.facebook.com/v18.0
+    base-url: https://graph.facebook.com/v23.0
     timeout: 30000
     max-retries: 3
 
