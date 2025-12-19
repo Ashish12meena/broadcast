@@ -3,6 +3,9 @@ spring:
     active: stress-test
   application:
     name: messaging
+  
+  jackson:
+    property-naming-strategy: SNAKE_CASE
 
   datasource:
     url: jdbc:mysql://localhost:3306/aigreentick_schema
@@ -64,11 +67,11 @@ kafka:
     campaign-messages:
       name: broadcast-messages
       partitions: 50
-      replicas: 2
+      replicas: 1
     campaign-dlq:
       name: broadcast-messages-dlq
       partitions: 10
-      replicas: 2
+      replicas: 1
     
 # Retry Configuration
   retry:

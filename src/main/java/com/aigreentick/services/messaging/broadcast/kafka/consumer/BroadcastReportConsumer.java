@@ -19,8 +19,8 @@ import com.aigreentick.services.messaging.broadcast.client.service.impl.Whatsapp
 import com.aigreentick.services.messaging.broadcast.dto.response.SendTemplateMessageResponse;
 import com.aigreentick.services.messaging.broadcast.enums.MessageStatus;
 import com.aigreentick.services.messaging.broadcast.kafka.event.BroadcastReportEvent;
+import com.aigreentick.services.messaging.broadcast.service.impl.ReportServiceImpl;
 import com.aigreentick.services.messaging.config.ExecutorConfig;
-import com.aigreentick.services.messaging.report.service.impl.ReportServiceImpl;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 

@@ -1,4 +1,4 @@
-package com.aigreentick.services.messaging.report.model;
+package com.aigreentick.services.messaging.broadcast.model;
 
 
 import jakarta.persistence.*;

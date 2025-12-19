@@ -1,5 +1,6 @@
 package com.aigreentick.services.messaging.broadcast.service.impl;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -17,14 +18,11 @@ import com.aigreentick.services.messaging.broadcast.client.service.TemplateServi
 import com.aigreentick.services.messaging.broadcast.client.service.UserService;
 import com.aigreentick.services.messaging.broadcast.dto.BroadcastRequest;
 import com.aigreentick.services.messaging.broadcast.dto.build.BuildTemplate;
-import com.aigreentick.services.messaging.broadcast.enums.BroadcastStatus;
-import com.aigreentick.services.messaging.broadcast.enums.IsMediaStatus;
+
 import com.aigreentick.services.messaging.broadcast.enums.Platform;
 import com.aigreentick.services.messaging.broadcast.kafka.event.BroadcastReportEvent;
 import com.aigreentick.services.messaging.broadcast.kafka.producer.BroadcastReportProducer;
-import com.aigreentick.services.messaging.broadcast.model.Broadcast;
-import com.aigreentick.services.messaging.report.model.Report;
-import com.aigreentick.services.messaging.report.service.impl.ReportServiceImpl;
+import com.aigreentick.services.messaging.broadcast.model.Report;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -233,9 +231,11 @@ public class BroadcastOrchestratorServiceImpl {
                 .templateId(request.getTemplateId())
                 .countryId(request.getCountryId())
                 .campname(request.getCampName())
-                .isMedia(request.getIsMedia() ? IsMediaStatus.YES : IsMediaStatus.NO)
+                .isMedia(request.getMedia() ? IsMediaStatus.YES : IsMediaStatus.NO)
                 .total(totalRecipients)
                 .status(BroadcastStatus.PENDING)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
                 .build();
 
         return broadcastServiceImpl.save(broadcast);

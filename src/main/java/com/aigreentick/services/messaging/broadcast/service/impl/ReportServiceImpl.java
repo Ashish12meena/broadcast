@@ -1,12 +1,12 @@
-package com.aigreentick.services.messaging.report.service.impl;
+package com.aigreentick.services.messaging.broadcast.service.impl;
 
 import java.time.LocalDateTime;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.aigreentick.services.messaging.broadcast.enums.MessageStatus;
-import com.aigreentick.services.messaging.report.model.Report;
-import com.aigreentick.services.messaging.report.repository.ReportRepository;
+import com.aigreentick.services.messaging.broadcast.model.Report;
+import com.aigreentick.services.messaging.broadcast.repository.ReportRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

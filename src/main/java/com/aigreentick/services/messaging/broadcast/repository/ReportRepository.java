@@ -1,4 +1,4 @@
-package com.aigreentick.services.messaging.report.repository;
+package com.aigreentick.services.messaging.broadcast.repository;
 
 import java.time.LocalDateTime;
 
@@ -7,7 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import com.aigreentick.services.messaging.report.model.Report;
+import com.aigreentick.services.messaging.broadcast.model.Report;
 
 public interface ReportRepository extends JpaRepository<Report, Long> {
     
