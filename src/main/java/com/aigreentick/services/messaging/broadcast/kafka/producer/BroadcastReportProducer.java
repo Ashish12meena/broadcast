@@ -25,12 +25,12 @@ public class BroadcastReportProducer {
 
     /**
      * Publishes a single campaign message event.
-     * SendResult
+     * 
      * @param event The message event to publish
      * @return CompletableFuture with send result
      */
     public CompletableFuture<SendResult<String, Object>> publishMessage(BroadcastReportEvent event) {
-        String partitionKey = String.valueOf(event.getBroadcstId());
+        String partitionKey = String.valueOf(event.getBroadcastId());
 
         CompletableFuture<SendResult<String, Object>> future = kafkaTemplate.send(
                 topicName,
@@ -39,11 +39,11 @@ public class BroadcastReportProducer {
 
         future.whenComplete((result, ex) -> {
             if (ex != null) {
-                log.error("Failed to publish campaign message event. campaignId={} eventId={} recipient={}",
-                        event.getBroadcstId(), event.getEventId(), event.getRecipient(), ex);
+                log.error("Failed to publish campaign message event. broadcastId={} eventId={} recipient={}",
+                        event.getBroadcastId(), event.getEventId(), event.getRecipient(), ex);
             } else {
-                log.debug("Campaign message event published. campaignId={} eventId={} partition={} offset={}",
-                        event.getBroadcstId(),
+                log.debug("Campaign message event published. broadcastId={} eventId={} partition={} offset={}",
+                        event.getBroadcastId(),
                         event.getEventId(),
                         result.getRecordMetadata().partition(),
                         result.getRecordMetadata().offset());
@@ -59,7 +59,6 @@ public class BroadcastReportProducer {
      * @param events List of events to publish
      * @return CompletableFuture that completes when all messages are sent
      */
-
     public CompletableFuture<Void> publishBatch(List<BroadcastReportEvent> events) {
         long startTime = System.currentTimeMillis();
 
@@ -90,8 +89,8 @@ public class BroadcastReportProducer {
             future.get(timeoutSeconds, TimeUnit.SECONDS);
             return true;
         } catch (Exception e) {
-            log.error("Failed to publish message synchronously. campaignId={} eventId={}",
-                    event.getBroadcstId(), event.getEventId(), e);
+            log.error("Failed to publish message synchronously. broadcastId={} eventId={}",
+                    event.getBroadcastId(), event.getEventId(), e);
             return false;
         }
     }
@@ -103,10 +102,9 @@ public class BroadcastReportProducer {
         event.setRetryCount(event.getRetryCount() + 1);
         event.setTimestamp(System.currentTimeMillis());
 
-        log.info("Publishing retry event. campaignId={} eventId={} retryCount={}",
-                event.getBroadcstId(), event.getEventId(), event.getRetryCount());
+        log.info("Publishing retry event. broadcastId={} eventId={} retryCount={}",
+                event.getBroadcastId(), event.getEventId(), event.getRetryCount());
 
         return publishMessage(event);
     }
-
 }

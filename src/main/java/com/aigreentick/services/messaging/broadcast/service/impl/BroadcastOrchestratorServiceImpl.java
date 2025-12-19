@@ -6,7 +6,6 @@ import java.util.concurrent.CompletableFuture;
 
 import org.springframework.stereotype.Service;
 
-import com.aigreentick.services.messaging.broadcast.client.dto.User;
 import com.aigreentick.services.messaging.broadcast.controller.BroadcastController.DispatchResult;
 import com.aigreentick.services.messaging.broadcast.dto.BroadcastDispatchItemDto;
 import com.aigreentick.services.messaging.broadcast.dto.BroadcastDispatchRequestDto;
@@ -46,8 +45,6 @@ public class BroadcastOrchestratorServiceImpl {
                 return ResponseMessage.error("Items list is empty");
             }
 
-            // 2. Get user (for userId in events)
-            User user = validateAndGetUser();
 
             // 3. Create Kafka events from items
             List<BroadcastReportEvent> events = new ArrayList<>();
@@ -79,7 +76,6 @@ public class BroadcastOrchestratorServiceImpl {
                     // Create event
                     BroadcastReportEvent event = BroadcastReportEvent.createForDispatch(
                         item.getBroadcastId(),
-                        user.getId(),
                         request.getAccountInfo().getPhoneNumberId(),
                         request.getAccountInfo().getAccessToken(),
                         item.getMobileNo(),
@@ -137,13 +133,6 @@ public class BroadcastOrchestratorServiceImpl {
             log.error("Dispatch failed after {}ms. Error: {}", duration, e.getMessage(), e);
             return ResponseMessage.error("Dispatch failed: " + e.getMessage());
         }
-    }
-
-    private User validateAndGetUser() {
-        User user = new User();
-        user.setId(1L);
-        user.setEmail("test@example.com");
-        return user;
     }
 
     /**

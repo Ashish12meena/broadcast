@@ -18,8 +18,6 @@ public class BroadcastReportEvent {
     
     private Long broadcastId; // Campaign this message belongs to
     
-    private Long userId;
-    
     private String phoneNumberId;
     
     private String accessToken;
@@ -41,7 +39,6 @@ public class BroadcastReportEvent {
      */
     public static BroadcastReportEvent createForDispatch(
             Long broadcastId,
-            Long userId,
             String phoneNumberId,
             String accessToken,
             String recipient,
@@ -50,7 +47,6 @@ public class BroadcastReportEvent {
         return BroadcastReportEvent.builder()
                 .eventId(UUID.randomUUID().toString())
                 .broadcastId(broadcastId)
-                .userId(userId)
                 .phoneNumberId(phoneNumberId)
                 .accessToken(accessToken)
                 .recipient(recipient)
