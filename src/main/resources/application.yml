@@ -30,7 +30,7 @@ spring:
           batch_size: 50
         order_inserts: true
         order_updates: true
-        
+
   # Kafka Configuration
   kafka:
     bootstrap-servers: localhost:9092
@@ -79,43 +79,22 @@ kafka:
     backoff-delay-ms: 5000
 
 # ============================================================
-# BATCH PROCESSING CONFIGURATION (NEW)
+# BATCH PROCESSING CONFIGURATION 
 # ============================================================
 batch:
-  # Batch size: Number of messages to accumulate before processing
-  # Set to 80 to match WhatsApp's concurrent request limit
-  # Batch will process when EITHER condition is met:
-  #   1. Batch reaches this size (80 messages)
-  #   2. Timeout expires (see timeout-ms below)
-  size: 80
-  
-  # Timeout in milliseconds for partial batches
-  # If batch doesn't fill to 80 messages within this time, 
-  # process whatever messages are available
-  # 
-  # Recommendations:
-  #   - High traffic (>1000 msg/sec): 1000-2000ms
-  #   - Medium traffic (100-1000 msg/sec): 2000-3000ms
-  #   - Low traffic (<100 msg/sec): 3000-5000ms
-  timeout-ms: 3000
-  
-  # Enable dual buffer system (future enhancement)
-  # When true, starts filling second buffer while first is processing
-  # This eliminates processing gaps but uses more memory
+  size: 80  # batch size for batch udpate
+  timeout-ms: 3000   # timeout if buffer not full
   enable-dual-buffer: false
 
 # Campaign Executor Configuration
 campaign:
   max-concurrent-users: 100
   semaphore-cleanup-enabled: true
-  
-  # Executor configuration
-  # These don't need to be as large now because BatchCoordinator
-  # handles concurrency more efficiently
+
   executor:
-    core-pool-size: 200    # Reduced from 500
-    max-pool-size: 500     # Reduced from 2000
-    queue-capacity: 5000   # Reduced from 10000
+    core-pool-size: 200   
+    max-pool-size: 500
+    queue-capacity: 5000  
 
 # WhatsApp API Configuration
 whatsapp:
@@ -144,7 +123,7 @@ logging:
     com.aigreentick.services.messaging.broadcast.service.impl.BatchCoordinator: DEBUG
     org.springframework.kafka: WARN
     org.apache.kafka: WARN
-    org.springframework.jdbc: DEBUG  # See batch SQL statements
+    org.springframework.jdbc: DEBUG  
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 

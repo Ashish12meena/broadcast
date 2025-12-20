@@ -22,7 +22,6 @@ public class WebClientConfig {
      */
     @Bean
     public WebClient.Builder webClientBuilder() {
-        // Configure HTTP client with timeouts
         HttpClient httpClient = HttpClient.create()
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000)
                 .responseTimeout(Duration.ofSeconds(30))
@@ -34,6 +33,6 @@ public class WebClientConfig {
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .codecs(configurer -> configurer
                         .defaultCodecs()
-                        .maxInMemorySize(2 * 1024 * 1024)); // 2MB buffer
+                        .maxInMemorySize(2 * 1024 * 1024)); // 2 mb buffer
     }
 }

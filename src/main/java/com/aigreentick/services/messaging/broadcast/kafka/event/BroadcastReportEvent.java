@@ -35,7 +35,7 @@ public class BroadcastReportEvent {
     private Integer priority; // Message priority (optional)
     
     /**
-     * Creates event for dispatch flow (pre-built payload)
+     * Creates event for dispatch flow 
      */
     public static BroadcastReportEvent createForDispatch(
             Long broadcastId,

@@ -16,7 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Kafka consumer for broadcast messages.
  * 
- * NEW APPROACH:
+ * 
  * - Consumer thread just adds event to batch and returns immediately
  * - BatchCoordinator handles all batching, WhatsApp calls, and DB updates
  * - Semaphores managed efficiently (held only during WhatsApp calls)

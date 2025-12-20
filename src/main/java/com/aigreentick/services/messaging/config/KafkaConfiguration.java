@@ -87,7 +87,7 @@ public class KafkaConfiguration {
         config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
 
-        // FIXED: Specific type for this consumer
+        //  Specific type for this consumer
         config.put(JsonDeserializer.TRUSTED_PACKAGES, "com.aigreentick.services.messaging.*");
         config.put(JsonDeserializer.VALUE_DEFAULT_TYPE, BroadcastReportEvent.class.getName());
         config.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, true);
@@ -104,7 +104,7 @@ public class KafkaConfiguration {
         return new DefaultKafkaConsumerFactory<>(
                 config,
                 new StringDeserializer(),
-                new JsonDeserializer<>(BroadcastReportEvent.class, false));
+                new JsonDeserializer<>(BroadcastReportEvent.class));
     }
 
     /**

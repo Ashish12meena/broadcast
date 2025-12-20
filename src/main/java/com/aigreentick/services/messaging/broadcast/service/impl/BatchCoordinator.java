@@ -192,7 +192,7 @@ public class BatchCoordinator {
             return errorResults;
 
         } finally {
-            // CRITICAL: Release ALL semaphore permits
+            //  Release ALL semaphore permits
             for (Semaphore sem : acquiredSemaphores) {
                 sem.release();
             }
