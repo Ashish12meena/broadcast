@@ -17,4 +17,4 @@ public class BroadcastDispatchRequestDto {
     @NotNull(message = "Account info is required")
     @Valid
     private WhatsappAccountInfo accountInfo;
-}
+}   

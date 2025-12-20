@@ -30,7 +30,7 @@ spring:
           batch_size: 50
         order_inserts: true
         order_updates: true
-
+        
   # Kafka Configuration
   kafka:
     bootstrap-servers: localhost:9092
