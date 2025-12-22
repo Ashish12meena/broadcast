@@ -2,15 +2,15 @@ package com.aigreentick.services.messaging.broadcast.enums;
 
 /**
  * Enum representing WhatsApp message statuses.
- * Maps to database ENUM values.
+ * Maps to database ENUM values in lowercase.
  */
 public enum MessageStatus {
-    PENDING("PENDING"),
-    SENT("SENT"),
-    DELIVERED("DELIVERED"),
-    READ("READ"),
-    FAILED("FAILED"),
-    ACCEPTED("ACCEPTED");
+    PENDING("pending"),
+    SENT("sent"),
+    DELIVERED("delivered"),
+    READ("read"),
+    FAILED("failed"),
+    ACCEPTED("accepted");
 
     private final String value;
 
@@ -31,10 +31,10 @@ public enum MessageStatus {
             return PENDING;
         }
         
-        String upperValue = value.toUpperCase();
+        String lowerValue = value.toLowerCase();
         
         for (MessageStatus status : MessageStatus.values()) {
-            if (status.value.equals(upperValue)) {
+            if (status.value.equals(lowerValue)) {
                 return status;
             }
         }
