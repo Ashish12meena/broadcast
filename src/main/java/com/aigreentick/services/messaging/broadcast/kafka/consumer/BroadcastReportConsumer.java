@@ -40,7 +40,7 @@ public class BroadcastReportConsumer {
             @Header(KafkaHeaders.OFFSET) long offset,
             Acknowledgment acknowledgment) {
 
-        log.debug("Received message: broadcastId={} recipient={} partition={} offset={}",
+        log.info("Received message: broadcastId={} recipient={} partition={} offset={}",
             event.getBroadcastId(), event.getRecipient(), partition, offset);
 
         try {
