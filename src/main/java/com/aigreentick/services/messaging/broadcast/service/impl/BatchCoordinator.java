@@ -3,11 +3,13 @@ package com.aigreentick.services.messaging.broadcast.service.impl;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.support.Acknowledgment;
@@ -21,12 +23,11 @@ import com.aigreentick.services.messaging.broadcast.kafka.event.BroadcastReportE
 import com.aigreentick.services.messaging.config.ExecutorConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import lombok.RequiredArgsConstructor;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class BatchCoordinator {
 
     private final WhatsappClient whatsappClient;
@@ -41,402 +42,405 @@ public class BatchCoordinator {
     @Value("${batch.timeout-ms:3000}")
     private long batchTimeoutMs;
 
-    // Per-user batch storage by phoneNumberId
-    private final ConcurrentHashMap<String, UserBatch> userBatches = new ConcurrentHashMap<>();
+    // Per-user queues and processors
+    private final ConcurrentHashMap<String, UserBatchProcessor> userProcessors = new ConcurrentHashMap<>();
+    
+    private final AtomicBoolean shutdownRequested = new AtomicBoolean(false);
+
+    public BatchCoordinator(
+            WhatsappClient whatsappClient,
+            ReportServiceImpl reportService,
+            ObjectMapper objectMapper,
+            ConcurrentHashMap<String, Semaphore> userSemaphores,
+            ConcurrentHashMap<String, Long> semaphoreLastUsed) {
+        this.whatsappClient = whatsappClient;
+        this.reportService = reportService;
+        this.objectMapper = objectMapper;
+        this.userSemaphores = userSemaphores;
+        this.semaphoreLastUsed = semaphoreLastUsed;
+    }
 
     /**
-     * Add event to batch for processing.
-     * Returns immediately - processing happens when batch is full or timeout occurs.
+     * Add event to user's queue. NEVER blocks, NEVER drops messages.
      */
     public void addEventToBatch(BroadcastReportEvent event, Acknowledgment acknowledgment) {
+        if (shutdownRequested.get()) {
+            log.warn("Shutdown requested, acknowledging message without processing");
+            acknowledgment.acknowledge();
+            return;
+        }
+
         String phoneNumberId = event.getPhoneNumberId();
 
-        // Get or create batch for this user
-        UserBatch batch = userBatches.computeIfAbsent(phoneNumberId, 
-            k -> new UserBatch(phoneNumberId, batchSize, batchTimeoutMs));
+        // Get or create processor for this user
+        UserBatchProcessor processor = userProcessors.computeIfAbsent(
+            phoneNumberId,
+            k -> {
+                UserBatchProcessor newProcessor = new UserBatchProcessor(
+                    phoneNumberId, 
+                    batchSize, 
+                    batchTimeoutMs
+                );
+                newProcessor.start();
+                return newProcessor;
+            }
+        );
 
-        // Add event to batch (now handles overflow properly)
-        boolean added = batch.addEvent(new BatchItem(event, acknowledgment));
+        // Add to queue - this NEVER blocks (unbounded queue)
+        boolean added = processor.addItem(new BatchItem(event, acknowledgment));
         
         if (!added) {
-            // Create overflow batch if current batch is processing
-            log.debug("Current batch processing, creating overflow batch for phoneNumberId={}", phoneNumberId);
-            UserBatch overflowBatch = new UserBatch(phoneNumberId, batchSize, batchTimeoutMs);
-            overflowBatch.addEvent(new BatchItem(event, acknowledgment));
-            
-            // Try to register overflow batch
-            userBatches.put(phoneNumberId + ":overflow", overflowBatch);
-            
-            // Check if overflow batch should process
-            if (overflowBatch.shouldProcess()) {
-                processBatchAsync(phoneNumberId + ":overflow", overflowBatch);
-            }
-            return;
-        }
-
-        // Check if batch is ready to process
-        if (batch.shouldProcess()) {
-            processBatchAsync(phoneNumberId, batch);
+            log.error("Failed to add item to queue for phoneNumberId={}", phoneNumberId);
+            acknowledgment.acknowledge(); // Prevent reprocessing
         }
     }
 
     /**
-     * Process batch asynchronously in separate thread.
-     * This prevents blocking the Kafka consumer thread.
+     * Graceful shutdown
      */
-    private void processBatchAsync(String batchKey, UserBatch batch) {
-        CompletableFuture.runAsync(() -> {
-            try {
-                processBatch(batchKey, batch);
-            } catch (Exception e) {
-                log.error("Failed to process batch for batchKey={}", batchKey, e);
-            }
-        });
-    }
-
-    /**
-     * Main batch processing logic - TWO STAGE approach.
-     */
-    private void processBatch(String batchKey, UserBatch batch) {
-        List<BatchItem> items = batch.claimBatchForProcessing();
+    @PreDestroy
+    public void shutdown() {
+        log.info("Shutting down BatchCoordinator...");
+        shutdownRequested.set(true);
         
-        if (items.isEmpty()) {
-            return;
+        for (UserBatchProcessor processor : userProcessors.values()) {
+            processor.shutdown();
         }
-
-        String phoneNumberId = batch.getPhoneNumberId();
-        long startTime = System.currentTimeMillis();
         
-        log.info("=== Processing Batch ===");
-        log.info("BatchKey: {} | PhoneNumberId: {} | Size: {}", batchKey, phoneNumberId, items.size());
-
-        try {
-            // STAGE 1: WhatsApp API Calls (with semaphore)
-            List<WhatsAppResult> whatsappResults = sendWhatsAppBatch(phoneNumberId, items);
-            
-            // STAGE 2: Database Update (single transaction)
-            batchUpdateDatabase(items, whatsappResults);
-            
-            // STAGE 3: Acknowledge Kafka messages
-            acknowledgeAllMessages(items);
-            
-            long duration = System.currentTimeMillis() - startTime;
-            log.info("=== Batch Completed ===");
-            log.info("BatchKey: {} | Items: {} | Duration: {}ms", batchKey, items.size(), duration);
-
-        } catch (Exception e) {
-            log.error("Critical error processing batch for batchKey={}", batchKey, e);
-            handleBatchFailure(items, e);
-        } finally {
-            // Mark batch as completed and cleanup
-            batch.markCompleted();
-            cleanupCompletedBatch(batchKey, batch);
-        }
+        log.info("BatchCoordinator shutdown complete");
     }
 
+    // ==================== USER BATCH PROCESSOR ====================
+
     /**
-     * STAGE 1: Send all WhatsApp requests concurrently.
+     * One processor per user. Runs in dedicated thread.
+     * Continuously drains queue and processes batches.
      */
-    private List<WhatsAppResult> sendWhatsAppBatch(String phoneNumberId, List<BatchItem> items) {
-        long stageStart = System.currentTimeMillis();
-        
-        Semaphore userSemaphore = ExecutorConfig.getSemaphoreForUser(
-            userSemaphores, semaphoreLastUsed, phoneNumberId);
+    private class UserBatchProcessor {
+        private final String phoneNumberId;
+        private final int maxBatchSize;
+        private final long timeoutMs;
+        private final BlockingQueue<BatchItem> queue;
+        private final Thread processorThread;
+        private final AtomicBoolean running = new AtomicBoolean(false);
 
-        List<Semaphore> acquiredSemaphores = new ArrayList<>();
-        List<CompletableFuture<WhatsAppResult>> futures = new ArrayList<>();
-
-        try {
-            log.debug("Stage 1: Acquiring {} permits for phoneNumberId={}", items.size(), phoneNumberId);
-
-            // Acquire semaphore permits
-            for (int i = 0; i < items.size(); i++) {
-                userSemaphore.acquire();
-                acquiredSemaphores.add(userSemaphore);
-            }
-
-            log.debug("Stage 1: All permits acquired. Available: {}", userSemaphore.availablePermits());
-
-            // Send all WhatsApp requests concurrently
-            for (BatchItem item : items) {
-                CompletableFuture<WhatsAppResult> future = CompletableFuture.supplyAsync(() -> 
-                    sendSingleWhatsAppMessage(item.event())
-                );
-                futures.add(future);
-            }
-
-            log.debug("Stage 1: Submitted {} concurrent WhatsApp requests", futures.size());
-
-            // Wait for all responses
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                .get(300, TimeUnit.SECONDS);
-
-            // Collect results
-            List<WhatsAppResult> results = new ArrayList<>();
-            for (CompletableFuture<WhatsAppResult> future : futures) {
-                results.add(future.get());
-            }
-
-            long stageDuration = System.currentTimeMillis() - stageStart;
-            log.info("Stage 1: WhatsApp batch completed. Duration: {}ms | Success: {}/{}", 
-                stageDuration, 
-                results.stream().filter(WhatsAppResult::success).count(),
-                results.size());
-
-            return results;
-
-        } catch (Exception e) {
-            log.error("Stage 1: WhatsApp batch failed for phoneNumberId={}", phoneNumberId, e);
+        public UserBatchProcessor(String phoneNumberId, int maxBatchSize, long timeoutMs) {
+            this.phoneNumberId = phoneNumberId;
+            this.maxBatchSize = maxBatchSize;
+            this.timeoutMs = timeoutMs;
+            this.queue = new LinkedBlockingQueue<>(); // Unbounded - never blocks
             
-            List<WhatsAppResult> errorResults = new ArrayList<>();
-            for (BatchItem item : items) {
-                errorResults.add(new WhatsAppResult(
-                    item.event().getBroadcastId(),
-                    item.event().getRecipient(),
-                    null,
-                    false,
-                    "Batch processing error: " + e.getMessage()
-                ));
-            }
-            return errorResults;
-
-        } finally {
-            for (Semaphore sem : acquiredSemaphores) {
-                sem.release();
-            }
-            log.debug("Stage 1: Released {} permits. Available: {}", 
-                acquiredSemaphores.size(), userSemaphore.availablePermits());
+            this.processorThread = new Thread(this::processLoop);
+            this.processorThread.setName("batch-processor-" + phoneNumberId);
+            this.processorThread.setDaemon(false);
         }
-    }
 
-    /**
-     * Send single WhatsApp message.
-     */
-    private WhatsAppResult sendSingleWhatsAppMessage(BroadcastReportEvent event) {
-        try {
-            FacebookApiResponse<SendTemplateMessageResponse> response = whatsappClient.sendMessage(
-                event.getPayload(),
-                event.getPhoneNumberId(),
-                event.getAccessToken()
-            );
-
-            return new WhatsAppResult(
-                event.getBroadcastId(),
-                event.getRecipient(),
-                response,
-                response.isSuccess(),
-                null
-            );
-
-        } catch (Exception e) {
-            log.error("WhatsApp request failed for recipient={}", event.getRecipient(), e);
-            return new WhatsAppResult(
-                event.getBroadcastId(),
-                event.getRecipient(),
-                null,
-                false,
-                e.getMessage()
-            );
+        public void start() {
+            running.set(true);
+            processorThread.start();
+            log.info("Started batch processor for phoneNumberId={}", phoneNumberId);
         }
-    }
 
-    /**
-     * STAGE 2: Batch update database.
-     */
-    private void batchUpdateDatabase(List<BatchItem> items, List<WhatsAppResult> results) {
-        long stageStart = System.currentTimeMillis();
-        
-        log.debug("Stage 2: Starting database batch update for {} items", items.size());
+        public boolean addItem(BatchItem item) {
+            return queue.offer(item);
+        }
 
-        List<DatabaseUpdate> updates = new ArrayList<>();
+        public void shutdown() {
+            running.set(false);
+            processorThread.interrupt();
+        }
 
-        for (int i = 0; i < items.size(); i++) {
-            BatchItem item = items.get(i);
-            WhatsAppResult result = results.get(i);
-
-            try {
-                String responseJson = objectMapper.writeValueAsString(result.response());
-                MessageStatus messageStatus = MessageStatus.FAILED;
-                String whatsappMessageId = null;
-
-                if (result.success() && result.response() != null) {
-                    SendTemplateMessageResponse data = result.response().getData();
-                    if (data != null && data.getMessages() != null && !data.getMessages().isEmpty()) {
-                        var msg = data.getMessages().get(0);
-                        whatsappMessageId = msg.getId();
-                        String statusStr = msg.getMessageStatus();
-                        messageStatus = MessageStatus.fromValue(statusStr != null ? statusStr : "accepted");
+        /**
+         * Main processing loop - runs continuously in dedicated thread
+         */
+        private void processLoop() {
+            log.info("Batch processor loop started for phoneNumberId={}", phoneNumberId);
+            
+            while (running.get() && !Thread.currentThread().isInterrupted()) {
+                try {
+                    List<BatchItem> batch = collectBatch();
+                    
+                    if (!batch.isEmpty()) {
+                        processBatch(batch);
                     }
+                    
+                } catch (InterruptedException e) {
+                    log.info("Batch processor interrupted for phoneNumberId={}", phoneNumberId);
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    log.error("Error in batch processor loop for phoneNumberId={}", phoneNumberId, e);
+                }
+            }
+            
+            // Process remaining items before shutdown
+            processRemainingItems();
+            
+            log.info("Batch processor loop ended for phoneNumberId={}", phoneNumberId);
+        }
+
+        /**
+         * Collect items into batch using smart timeout strategy
+         */
+        private List<BatchItem> collectBatch() throws InterruptedException {
+            List<BatchItem> batch = new ArrayList<>();
+            
+            // Wait for first item (blocking)
+            BatchItem firstItem = queue.poll(timeoutMs, TimeUnit.MILLISECONDS);
+            if (firstItem == null) {
+                return batch; // Timeout, return empty batch
+            }
+            
+            batch.add(firstItem);
+            
+            // Collect more items without blocking (drain up to maxBatchSize)
+            queue.drainTo(batch, maxBatchSize - 1);
+            
+            return batch;
+        }
+
+        /**
+         * Process a batch of items
+         */
+        private void processBatch(List<BatchItem> batch) {
+            long startTime = System.currentTimeMillis();
+            
+            log.info("=== Processing Batch ===");
+            log.info("PhoneNumberId: {} | Size: {} | Queue remaining: {}", 
+                phoneNumberId, batch.size(), queue.size());
+
+            try {
+                // STAGE 1: WhatsApp API Calls
+                List<WhatsAppResult> results = sendWhatsAppBatch(batch);
+                
+                // STAGE 2: Database Update
+                batchUpdateDatabase(batch, results);
+                
+                // STAGE 3: Acknowledge Kafka messages
+                acknowledgeAllMessages(batch);
+                
+                long duration = System.currentTimeMillis() - startTime;
+                log.info("=== Batch Completed ===");
+                log.info("PhoneNumberId: {} | Items: {} | Duration: {}ms | Queue: {}", 
+                    phoneNumberId, batch.size(), duration, queue.size());
+
+            } catch (Exception e) {
+                log.error("Batch processing failed for phoneNumberId={}", phoneNumberId, e);
+                handleBatchFailure(batch, e);
+            }
+        }
+
+        /**
+         * Process remaining items during shutdown
+         */
+        private void processRemainingItems() {
+            List<BatchItem> remaining = new ArrayList<>();
+            queue.drainTo(remaining);
+            
+            if (!remaining.isEmpty()) {
+                log.info("Processing {} remaining items during shutdown for phoneNumberId={}", 
+                    remaining.size(), phoneNumberId);
+                processBatch(remaining);
+            }
+        }
+
+        /**
+         * STAGE 1: Send WhatsApp requests concurrently
+         */
+        private List<WhatsAppResult> sendWhatsAppBatch(List<BatchItem> batch) {
+            long stageStart = System.currentTimeMillis();
+            
+            Semaphore userSemaphore = ExecutorConfig.getSemaphoreForUser(
+                userSemaphores, semaphoreLastUsed, phoneNumberId);
+
+            List<Semaphore> acquiredSemaphores = new ArrayList<>();
+            List<CompletableFuture<WhatsAppResult>> futures = new ArrayList<>();
+
+            try {
+                log.debug("Stage 1: Acquiring {} permits", batch.size());
+
+                // Acquire permits
+                for (int i = 0; i < batch.size(); i++) {
+                    userSemaphore.acquire();
+                    acquiredSemaphores.add(userSemaphore);
                 }
 
-                updates.add(new DatabaseUpdate(
-                    item.event().getBroadcastId(),
-                    item.event().getRecipient(),
-                    responseJson,
-                    messageStatus,
-                    whatsappMessageId,
-                    LocalDateTime.now()
-                ));
+                log.debug("Stage 1: Permits acquired. Available: {}", 
+                    userSemaphore.availablePermits());
+
+                // Submit concurrent WhatsApp requests
+                for (BatchItem item : batch) {
+                    CompletableFuture<WhatsAppResult> future = 
+                        CompletableFuture.supplyAsync(() -> 
+                            sendSingleWhatsAppMessage(item.event())
+                        );
+                    futures.add(future);
+                }
+
+                // Wait for all responses
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .get(300, TimeUnit.SECONDS);
+
+                // Collect results
+                List<WhatsAppResult> results = new ArrayList<>();
+                for (CompletableFuture<WhatsAppResult> future : futures) {
+                    results.add(future.get());
+                }
+
+                long stageDuration = System.currentTimeMillis() - stageStart;
+                log.info("Stage 1: Completed. Duration: {}ms | Success: {}/{}", 
+                    stageDuration,
+                    results.stream().filter(WhatsAppResult::success).count(),
+                    results.size());
+
+                return results;
 
             } catch (Exception e) {
-                log.error("Failed to prepare update for recipient={}", item.event().getRecipient(), e);
+                log.error("Stage 1: Failed for phoneNumberId={}", phoneNumberId, e);
+                
+                // Create error results
+                List<WhatsAppResult> errorResults = new ArrayList<>();
+                for (BatchItem item : batch) {
+                    errorResults.add(new WhatsAppResult(
+                        item.event().getBroadcastId(),
+                        item.event().getRecipient(),
+                        null,
+                        false,
+                        "Batch error: " + e.getMessage()
+                    ));
+                }
+                return errorResults;
+
+            } finally {
+                // Release all permits
+                for (Semaphore sem : acquiredSemaphores) {
+                    sem.release();
+                }
+                log.debug("Stage 1: Released {} permits", acquiredSemaphores.size());
             }
         }
 
-        try {
-            int successCount = reportService.batchUpdateReports(updates);
+        /**
+         * Send single WhatsApp message
+         */
+        private WhatsAppResult sendSingleWhatsAppMessage(BroadcastReportEvent event) {
+            try {
+                FacebookApiResponse<SendTemplateMessageResponse> response = 
+                    whatsappClient.sendMessage(
+                        event.getPayload(),
+                        event.getPhoneNumberId(),
+                        event.getAccessToken()
+                    );
+
+                return new WhatsAppResult(
+                    event.getBroadcastId(),
+                    event.getRecipient(),
+                    response,
+                    response.isSuccess(),
+                    null
+                );
+
+            } catch (Exception e) {
+                log.error("WhatsApp request failed: recipient={}", 
+                    event.getRecipient(), e);
+                return new WhatsAppResult(
+                    event.getBroadcastId(),
+                    event.getRecipient(),
+                    null,
+                    false,
+                    e.getMessage()
+                );
+            }
+        }
+
+        /**
+         * STAGE 2: Batch database update
+         */
+        private void batchUpdateDatabase(List<BatchItem> batch, List<WhatsAppResult> results) {
+            long stageStart = System.currentTimeMillis();
             
-            long stageDuration = System.currentTimeMillis() - stageStart;
-            log.info("Stage 2: Database batch completed. Duration: {}ms | Updated: {}/{}", 
-                stageDuration, successCount, updates.size());
+            List<DatabaseUpdate> updates = new ArrayList<>();
 
-        } catch (Exception e) {
-            log.error("Stage 2: Database batch update failed", e);
-            throw e;
-        }
-    }
+            for (int i = 0; i < batch.size(); i++) {
+                BatchItem item = batch.get(i);
+                WhatsAppResult result = results.get(i);
 
-    /**
-     * STAGE 3: Acknowledge Kafka messages.
-     */
-    private void acknowledgeAllMessages(List<BatchItem> items) {
-        log.debug("Stage 3: Acknowledging {} Kafka messages", items.size());
-        
-        for (BatchItem item : items) {
+                try {
+                    String responseJson = objectMapper.writeValueAsString(result.response());
+                    MessageStatus messageStatus = MessageStatus.FAILED;
+                    String whatsappMessageId = null;
+
+                    if (result.success() && result.response() != null) {
+                        SendTemplateMessageResponse data = result.response().getData();
+                        if (data != null && data.getMessages() != null && 
+                            !data.getMessages().isEmpty()) {
+                            var msg = data.getMessages().get(0);
+                            whatsappMessageId = msg.getId();
+                            String statusStr = msg.getMessageStatus();
+                            messageStatus = MessageStatus.fromValue(
+                                statusStr != null ? statusStr : "accepted");
+                        }
+                    }
+
+                    updates.add(new DatabaseUpdate(
+                        item.event().getBroadcastId(),
+                        item.event().getRecipient(),
+                        responseJson,
+                        messageStatus,
+                        whatsappMessageId,
+                        LocalDateTime.now()
+                    ));
+
+                } catch (Exception e) {
+                    log.error("Failed to prepare update: recipient={}", 
+                        item.event().getRecipient(), e);
+                }
+            }
+
             try {
-                item.acknowledgment().acknowledge();
+                int successCount = reportService.batchUpdateReports(updates);
+                
+                long stageDuration = System.currentTimeMillis() - stageStart;
+                log.info("Stage 2: Completed. Duration: {}ms | Updated: {}/{}", 
+                    stageDuration, successCount, updates.size());
+
             } catch (Exception e) {
-                log.error("Failed to acknowledge message for recipient={}", 
-                    item.event().getRecipient(), e);
+                log.error("Stage 2: Failed", e);
+                throw e;
             }
         }
-    }
 
-    /**
-     * Handle batch processing failure.
-     */
-    private void handleBatchFailure(List<BatchItem> items, Exception error) {
-        log.error("Handling batch failure for {} items", items.size());
-        
-        for (BatchItem item : items) {
-            try {
-                item.acknowledgment().acknowledge();
-            } catch (Exception e) {
-                log.error("Failed to acknowledge failed message", e);
+        /**
+         * STAGE 3: Acknowledge Kafka messages
+         */
+        private void acknowledgeAllMessages(List<BatchItem> batch) {
+            for (BatchItem item : batch) {
+                try {
+                    item.acknowledgment().acknowledge();
+                } catch (Exception e) {
+                    log.error("Failed to acknowledge: recipient={}", 
+                        item.event().getRecipient(), e);
+                }
             }
         }
-    }
 
-    /**
-     * Cleanup completed batch.
-     */
-    private void cleanupCompletedBatch(String batchKey, UserBatch batch) {
-        if (batch.isEmpty() && batch.isCompleted()) {
-            userBatches.remove(batchKey);
-            log.debug("Cleaned up completed batch: {}", batchKey);
+        /**
+         * Handle batch failure
+         */
+        private void handleBatchFailure(List<BatchItem> batch, Exception error) {
+            log.error("Handling batch failure for {} items", batch.size());
+            
+            for (BatchItem item : batch) {
+                try {
+                    item.acknowledgment().acknowledge();
+                } catch (Exception e) {
+                    log.error("Failed to acknowledge failed message", e);
+                }
+            }
         }
     }
 
     // ==================== INNER CLASSES ====================
-
-    /**
-     * FIXED: UserBatch now properly handles concurrent additions during processing.
-     */
-    private static class UserBatch {
-        private final String phoneNumberId;
-        private final int maxSize;
-        private final long timeoutMs;
-        private final long creationTime;
-        private final List<BatchItem> items = new ArrayList<>();
-        private final ReentrantLock lock = new ReentrantLock();
-        private volatile boolean processing = false;
-        private volatile boolean completed = false;
-
-        public UserBatch(String phoneNumberId, int maxSize, long timeoutMs) {
-            this.phoneNumberId = phoneNumberId;
-            this.maxSize = maxSize;
-            this.timeoutMs = timeoutMs;
-            this.creationTime = System.currentTimeMillis();
-        }
-
-        public String getPhoneNumberId() {
-            return phoneNumberId;
-        }
-
-        /**
-         * FIXED: Returns false if batch is processing instead of silently dropping.
-         */
-        public boolean addEvent(BatchItem item) {
-            lock.lock();
-            try {
-                if (processing || completed) {
-                    return false; // Signal caller to create overflow batch
-                }
-                
-                items.add(item);
-                return true;
-                
-            } finally {
-                lock.unlock();
-            }
-        }
-
-        public boolean shouldProcess() {
-            lock.lock();
-            try {
-                if (processing || completed || items.isEmpty()) {
-                    return false;
-                }
-
-                boolean isFull = items.size() >= maxSize;
-                boolean isTimeout = (System.currentTimeMillis() - creationTime) >= timeoutMs;
-
-                if (isFull || isTimeout) {
-                    processing = true;
-                    return true;
-                }
-
-                return false;
-            } finally {
-                lock.unlock();
-            }
-        }
-
-        public List<BatchItem> claimBatchForProcessing() {
-            lock.lock();
-            try {
-                if (!processing) {
-                    return new ArrayList<>();
-                }
-                return new ArrayList<>(items);
-            } finally {
-                lock.unlock();
-            }
-        }
-
-        public void markCompleted() {
-            lock.lock();
-            try {
-                completed = true;
-                items.clear();
-            } finally {
-                lock.unlock();
-            }
-        }
-
-        public boolean isEmpty() {
-            lock.lock();
-            try {
-                return items.isEmpty();
-            } finally {
-                lock.unlock();
-            }
-        }
-
-        public boolean isCompleted() {
-            return completed;
-        }
-    }
 
     private record BatchItem(
         BroadcastReportEvent event,
