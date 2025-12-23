@@ -44,7 +44,7 @@ public class BatchCoordinator {
 
     // Per-user queues and processors
     private final ConcurrentHashMap<String, UserBatchProcessor> userProcessors = new ConcurrentHashMap<>();
-    
+
     private final AtomicBoolean shutdownRequested = new AtomicBoolean(false);
 
     public BatchCoordinator(
@@ -74,21 +74,19 @@ public class BatchCoordinator {
 
         // Get or create processor for this user
         UserBatchProcessor processor = userProcessors.computeIfAbsent(
-            phoneNumberId,
-            k -> {
-                UserBatchProcessor newProcessor = new UserBatchProcessor(
-                    phoneNumberId, 
-                    batchSize, 
-                    batchTimeoutMs
-                );
-                newProcessor.start();
-                return newProcessor;
-            }
-        );
+                phoneNumberId,
+                k -> {
+                    UserBatchProcessor newProcessor = new UserBatchProcessor(
+                            phoneNumberId,
+                            batchSize,
+                            batchTimeoutMs);
+                    newProcessor.start();
+                    return newProcessor;
+                });
 
         // Add to queue - this NEVER blocks (unbounded queue)
         boolean added = processor.addItem(new BatchItem(event, acknowledgment));
-        
+
         if (!added) {
             log.error("Failed to add item to queue for phoneNumberId={}", phoneNumberId);
             acknowledgment.acknowledge(); // Prevent reprocessing
@@ -102,11 +100,11 @@ public class BatchCoordinator {
     public void shutdown() {
         log.info("Shutting down BatchCoordinator...");
         shutdownRequested.set(true);
-        
+
         for (UserBatchProcessor processor : userProcessors.values()) {
             processor.shutdown();
         }
-        
+
         log.info("BatchCoordinator shutdown complete");
     }
 
@@ -129,7 +127,7 @@ public class BatchCoordinator {
             this.maxBatchSize = maxBatchSize;
             this.timeoutMs = timeoutMs;
             this.queue = new LinkedBlockingQueue<>(); // Unbounded - never blocks
-            
+
             this.processorThread = new Thread(this::processLoop);
             this.processorThread.setName("batch-processor-" + phoneNumberId);
             this.processorThread.setDaemon(false);
@@ -155,15 +153,15 @@ public class BatchCoordinator {
          */
         private void processLoop() {
             log.info("Batch processor loop started for phoneNumberId={}", phoneNumberId);
-            
+
             while (running.get() && !Thread.currentThread().isInterrupted()) {
                 try {
                     List<BatchItem> batch = collectBatch();
-                    
+
                     if (!batch.isEmpty()) {
                         processBatch(batch);
                     }
-                    
+
                 } catch (InterruptedException e) {
                     log.info("Batch processor interrupted for phoneNumberId={}", phoneNumberId);
                     Thread.currentThread().interrupt();
@@ -172,10 +170,10 @@ public class BatchCoordinator {
                     log.error("Error in batch processor loop for phoneNumberId={}", phoneNumberId, e);
                 }
             }
-            
+
             // Process remaining items before shutdown
             processRemainingItems();
-            
+
             log.info("Batch processor loop ended for phoneNumberId={}", phoneNumberId);
         }
 
@@ -184,18 +182,18 @@ public class BatchCoordinator {
          */
         private List<BatchItem> collectBatch() throws InterruptedException {
             List<BatchItem> batch = new ArrayList<>();
-            
+
             // Wait for first item (blocking)
             BatchItem firstItem = queue.poll(timeoutMs, TimeUnit.MILLISECONDS);
             if (firstItem == null) {
                 return batch; // Timeout, return empty batch
             }
-            
+
             batch.add(firstItem);
-            
+
             // Collect more items without blocking (drain up to maxBatchSize)
             queue.drainTo(batch, maxBatchSize - 1);
-            
+
             return batch;
         }
 
@@ -204,25 +202,25 @@ public class BatchCoordinator {
          */
         private void processBatch(List<BatchItem> batch) {
             long startTime = System.currentTimeMillis();
-            
+
             log.info("=== Processing Batch ===");
-            log.info("PhoneNumberId: {} | Size: {} | Queue remaining: {}", 
-                phoneNumberId, batch.size(), queue.size());
+            log.info("PhoneNumberId: {} | Size: {} | Queue remaining: {}",
+                    phoneNumberId, batch.size(), queue.size());
 
             try {
                 // STAGE 1: WhatsApp API Calls
                 List<WhatsAppResult> results = sendWhatsAppBatch(batch);
-                
+
                 // STAGE 2: Database Update
                 batchUpdateDatabase(batch, results);
-                
+
                 // STAGE 3: Acknowledge Kafka messages
                 acknowledgeAllMessages(batch);
-                
+
                 long duration = System.currentTimeMillis() - startTime;
                 log.info("=== Batch Completed ===");
-                log.info("PhoneNumberId: {} | Items: {} | Duration: {}ms | Queue: {}", 
-                    phoneNumberId, batch.size(), duration, queue.size());
+                log.info("PhoneNumberId: {} | Items: {} | Duration: {}ms | Queue: {}",
+                        phoneNumberId, batch.size(), duration, queue.size());
 
             } catch (Exception e) {
                 log.error("Batch processing failed for phoneNumberId={}", phoneNumberId, e);
@@ -236,10 +234,10 @@ public class BatchCoordinator {
         private void processRemainingItems() {
             List<BatchItem> remaining = new ArrayList<>();
             queue.drainTo(remaining);
-            
+
             if (!remaining.isEmpty()) {
-                log.info("Processing {} remaining items during shutdown for phoneNumberId={}", 
-                    remaining.size(), phoneNumberId);
+                log.info("Processing {} remaining items during shutdown for phoneNumberId={}",
+                        remaining.size(), phoneNumberId);
                 processBatch(remaining);
             }
         }
@@ -249,9 +247,9 @@ public class BatchCoordinator {
          */
         private List<WhatsAppResult> sendWhatsAppBatch(List<BatchItem> batch) {
             long stageStart = System.currentTimeMillis();
-            
+
             Semaphore userSemaphore = ExecutorConfig.getSemaphoreForUser(
-                userSemaphores, semaphoreLastUsed, phoneNumberId);
+                    userSemaphores, semaphoreLastUsed, phoneNumberId);
 
             List<Semaphore> acquiredSemaphores = new ArrayList<>();
             List<CompletableFuture<WhatsAppResult>> futures = new ArrayList<>();
@@ -265,21 +263,19 @@ public class BatchCoordinator {
                     acquiredSemaphores.add(userSemaphore);
                 }
 
-                log.debug("Stage 1: Permits acquired. Available: {}", 
-                    userSemaphore.availablePermits());
+                log.debug("Stage 1: Permits acquired. Available: {}",
+                        userSemaphore.availablePermits());
 
                 // Submit concurrent WhatsApp requests
                 for (BatchItem item : batch) {
-                    CompletableFuture<WhatsAppResult> future = 
-                        CompletableFuture.supplyAsync(() -> 
-                            sendSingleWhatsAppMessage(item.event())
-                        );
+                    CompletableFuture<WhatsAppResult> future = CompletableFuture
+                            .supplyAsync(() -> sendSingleWhatsAppMessage(item.event()));
                     futures.add(future);
                 }
 
                 // Wait for all responses
                 CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                    .get(300, TimeUnit.SECONDS);
+                        .get(300, TimeUnit.SECONDS);
 
                 // Collect results
                 List<WhatsAppResult> results = new ArrayList<>();
@@ -288,26 +284,25 @@ public class BatchCoordinator {
                 }
 
                 long stageDuration = System.currentTimeMillis() - stageStart;
-                log.info("Stage 1: Completed. Duration: {}ms | Success: {}/{}", 
-                    stageDuration,
-                    results.stream().filter(WhatsAppResult::success).count(),
-                    results.size());
+                log.info("Stage 1: Completed. Duration: {}ms | Success: {}/{}",
+                        stageDuration,
+                        results.stream().filter(WhatsAppResult::success).count(),
+                        results.size());
 
                 return results;
 
             } catch (Exception e) {
                 log.error("Stage 1: Failed for phoneNumberId={}", phoneNumberId, e);
-                
+
                 // Create error results
                 List<WhatsAppResult> errorResults = new ArrayList<>();
                 for (BatchItem item : batch) {
                     errorResults.add(new WhatsAppResult(
-                        item.event().getBroadcastId(),
-                        item.event().getRecipient(),
-                        null,
-                        false,
-                        "Batch error: " + e.getMessage()
-                    ));
+                            item.event().getBroadcastId(),
+                            item.event().getRecipient(),
+                            null,
+                            false,
+                            "Batch error: " + e.getMessage()));
                 }
                 return errorResults;
 
@@ -325,31 +320,27 @@ public class BatchCoordinator {
          */
         private WhatsAppResult sendSingleWhatsAppMessage(BroadcastReportEvent event) {
             try {
-                FacebookApiResponse<SendTemplateMessageResponse> response = 
-                    whatsappClient.sendMessage(
+                FacebookApiResponse<SendTemplateMessageResponse> response = whatsappClient.sendMessage(
                         event.getPayload(),
                         event.getPhoneNumberId(),
-                        event.getAccessToken()
-                    );
+                        event.getAccessToken());
 
                 return new WhatsAppResult(
-                    event.getBroadcastId(),
-                    event.getRecipient(),
-                    response,
-                    response.isSuccess(),
-                    null
-                );
+                        event.getBroadcastId(),
+                        event.getRecipient(),
+                        response,
+                        response.isSuccess(),
+                        null);
 
             } catch (Exception e) {
-                log.error("WhatsApp request failed: recipient={}", 
-                    event.getRecipient(), e);
+                log.error("WhatsApp request failed: recipient={}",
+                        event.getRecipient(), e);
                 return new WhatsAppResult(
-                    event.getBroadcastId(),
-                    event.getRecipient(),
-                    null,
-                    false,
-                    e.getMessage()
-                );
+                        event.getBroadcastId(),
+                        event.getRecipient(),
+                        null,
+                        false,
+                        e.getMessage());
             }
         }
 
@@ -358,7 +349,7 @@ public class BatchCoordinator {
          */
         private void batchUpdateDatabase(List<BatchItem> batch, List<WhatsAppResult> results) {
             long stageStart = System.currentTimeMillis();
-            
+
             List<DatabaseUpdate> updates = new ArrayList<>();
 
             for (int i = 0; i < batch.size(); i++) {
@@ -367,42 +358,50 @@ public class BatchCoordinator {
 
                 try {
                     String responseJson = objectMapper.writeValueAsString(result.response());
+                    String status;
+                    String messageStatusValue = "Failed";
                     MessageStatus messageStatus = MessageStatus.FAILED;
                     String whatsappMessageId = null;
 
                     if (result.success() && result.response() != null) {
+                        status = "sent"; // API call succeeded
                         SendTemplateMessageResponse data = result.response().getData();
-                        if (data != null && data.getMessages() != null && 
-                            !data.getMessages().isEmpty()) {
+                        if (data != null && data.getMessages() != null &&
+                                !data.getMessages().isEmpty()) {
                             var msg = data.getMessages().get(0);
                             whatsappMessageId = msg.getId();
                             String statusStr = msg.getMessageStatus();
                             messageStatus = MessageStatus.fromValue(
-                                statusStr != null ? statusStr : "sent");
+                                    statusStr != null ? statusStr : "sent");
+                        } else {
+                            messageStatusValue = "sent";
                         }
+                    } else {
+                        status = "failed"; // API call failed
+                        messageStatusValue = result.errorMessage() != null ? result.errorMessage() : "Failed";
                     }
 
                     updates.add(new DatabaseUpdate(
-                        item.event().getBroadcastId(),
-                        item.event().getRecipient(),
-                        responseJson,
-                        messageStatus,
-                        whatsappMessageId,
-                        LocalDateTime.now()
-                    ));
+                            item.event().getBroadcastId(),
+                            item.event().getRecipient(),
+                            responseJson,
+                            status,
+                            messageStatusValue,
+                            whatsappMessageId,
+                            LocalDateTime.now()));
 
                 } catch (Exception e) {
-                    log.error("Failed to prepare update: recipient={}", 
-                        item.event().getRecipient(), e);
+                    log.error("Failed to prepare update: recipient={}",
+                            item.event().getRecipient(), e);
                 }
             }
 
             try {
                 int successCount = reportService.batchUpdateReports(updates);
-                
+
                 long stageDuration = System.currentTimeMillis() - stageStart;
-                log.info("Stage 2: Completed. Duration: {}ms | Updated: {}/{}", 
-                    stageDuration, successCount, updates.size());
+                log.info("Stage 2: Completed. Duration: {}ms | Updated: {}/{}",
+                        stageDuration, successCount, updates.size());
 
             } catch (Exception e) {
                 log.error("Stage 2: Failed", e);
@@ -418,8 +417,8 @@ public class BatchCoordinator {
                 try {
                     item.acknowledgment().acknowledge();
                 } catch (Exception e) {
-                    log.error("Failed to acknowledge: recipient={}", 
-                        item.event().getRecipient(), e);
+                    log.error("Failed to acknowledge: recipient={}",
+                            item.event().getRecipient(), e);
                 }
             }
         }
@@ -429,7 +428,7 @@ public class BatchCoordinator {
          */
         private void handleBatchFailure(List<BatchItem> batch, Exception error) {
             log.error("Handling batch failure for {} items", batch.size());
-            
+
             for (BatchItem item : batch) {
                 try {
                     item.acknowledgment().acknowledge();
@@ -443,24 +442,25 @@ public class BatchCoordinator {
     // ==================== INNER CLASSES ====================
 
     private record BatchItem(
-        BroadcastReportEvent event,
-        Acknowledgment acknowledgment
-    ) {}
+            BroadcastReportEvent event,
+            Acknowledgment acknowledgment) {
+    }
 
     private record WhatsAppResult(
-        Long broadcastId,
-        String recipient,
-        FacebookApiResponse<SendTemplateMessageResponse> response,
-        boolean success,
-        String errorMessage
-    ) {}
+            Long broadcastId,
+            String recipient,
+            FacebookApiResponse<SendTemplateMessageResponse> response,
+            boolean success,
+            String errorMessage) {
+    }
 
     public record DatabaseUpdate(
-        Long broadcastId,
-        String mobile,
-        String responseJson,
-        MessageStatus messageStatus,
-        String whatsappMessageId,
-        LocalDateTime timestamp
-    ) {}
+            Long broadcastId,
+            String mobile,
+            String responseJson,
+            String status,
+            String messageStatus,
+            String whatsappMessageId,
+            LocalDateTime timestamp) {
+    }
 }

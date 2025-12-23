@@ -59,8 +59,8 @@ public class ReportServiceImpl {
                     public void setValues(PreparedStatement ps, int i) throws java.sql.SQLException {
                         DatabaseUpdate update = updates.get(i);
                         ps.setString(1, update.responseJson());
-                        ps.setString(2, update.messageStatus().getValue());
-                        ps.setString(3, update.messageStatus().getValue());
+                        ps.setString(2, update.status());
+                        ps.setString(3, update.messageStatus());
                         ps.setString(4, update.whatsappMessageId());
                         ps.setTimestamp(5, Timestamp.valueOf(update.timestamp()));
                         ps.setLong(6, update.broadcastId());
