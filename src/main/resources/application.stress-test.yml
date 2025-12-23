@@ -1,0 +1,131 @@
+spring:
+  application:
+    name: messaging
+  
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/aigreentick_schema
+    username: root
+    password: meenagaming12@#
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+
+  # Kafka Configuration
+  kafka:
+    bootstrap-servers: localhost:9092
+    
+    # Producer Configuration
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      compression-type: snappy
+      batch-size: 131072
+      linger-ms: 50
+      buffer-memory: 268435456
+      max-request-size: 2097152
+      
+    # Consumer Configuration
+    consumer:
+      group-id: messaging-broadcast-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      max-poll-records: 100
+      fetch-min-size: 2048
+      fetch-max-wait: 100
+      concurrency: 50
+      properties:
+        spring.json.trusted.packages: "com.aigreentick.services.messaging.*"
+
+# Kafka Topics Configuration
+kafka:
+  topics:
+    campaign-messages:
+      name: broadcast-messages
+      partitions: 50
+      replicas: 1
+    campaign-dlq:
+      name: broadcast-messages-dlq
+      partitions: 10
+      replicas: 1
+    
+# Retry Configuration
+  retry:
+    max-attempts: 3
+    backoff-delay-ms: 5000
+
+# ===========================================================
+# BATCH PROCESSING CONFIGURATION 
+# ===========================================================
+batch:
+  size: 80  # batch size for batch udpate
+  timeout-ms: 3000   # timeout if buffer not full
+  enable-dual-buffer: false
+
+# Campaign Executor Configuration
+campaign:
+  max-concurrent-users: 100
+  semaphore-cleanup-enabled: true
+
+  executor:
+    core-pool-size: 200   
+    max-pool-size: 500
+    queue-capacity: 5000  
+
+# WhatsApp API Configuration
+whatsapp:
+  api:
+    base-url: https://graph.facebook.com/v23.0
+    timeout: 30000
+    max-retries: 3
+
+# Monitoring & Metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,batch-stats
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+# Logging
+logging:
+  level:
+    com.aigreentick: INFO
+    com.aigreentick.services.messaging.broadcast.service.impl.BatchCoordinator: DEBUG
+    org.springframework.kafka: WARN
+    org.apache.kafka: WARN
+    org.springframework.jdbc: DEBUG  
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# ---------------- WhatsApp Service ----------------
+whatsapp-service:
+  base-url: https://graph.facebook.com
+  api-version: v23.0
