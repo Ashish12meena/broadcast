@@ -62,6 +62,8 @@ public class Report {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "response", columnDefinition = "JSON")
     private String response;
+
+    private String payload;
     
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "contact", columnDefinition = "JSON")
