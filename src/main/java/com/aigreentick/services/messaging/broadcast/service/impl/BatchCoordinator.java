@@ -359,8 +359,7 @@ public class BatchCoordinator {
                 try {
                     String responseJson = objectMapper.writeValueAsString(result.response());
                     String status;
-                    String messageStatusValue = "Failed";
-                    MessageStatus messageStatus = MessageStatus.FAILED;
+                    String messageStatusValue;
                     String whatsappMessageId = null;
 
                     if (result.success() && result.response() != null) {
@@ -370,9 +369,7 @@ public class BatchCoordinator {
                                 !data.getMessages().isEmpty()) {
                             var msg = data.getMessages().get(0);
                             whatsappMessageId = msg.getId();
-                            String statusStr = msg.getMessageStatus();
-                            messageStatus = MessageStatus.fromValue(
-                                    statusStr != null ? statusStr : "sent");
+                            messageStatusValue = msg.getMessageStatus() != null ? msg.getMessageStatus() : "sent";
                         } else {
                             messageStatusValue = "sent";
                         }
