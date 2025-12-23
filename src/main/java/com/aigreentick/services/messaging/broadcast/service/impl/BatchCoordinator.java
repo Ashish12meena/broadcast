@@ -384,6 +384,7 @@ public class BatchCoordinator {
                             status,
                             messageStatusValue,
                             whatsappMessageId,
+                            item.event().getPayload(),
                             LocalDateTime.now()));
 
                 } catch (Exception e) {
@@ -457,6 +458,7 @@ public class BatchCoordinator {
             String status,
             String messageStatus,
             String whatsappMessageId,
+            String payload,
             LocalDateTime timestamp) {
     }
 }
