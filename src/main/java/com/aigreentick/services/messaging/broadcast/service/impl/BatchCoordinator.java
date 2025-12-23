@@ -18,7 +18,6 @@ import org.springframework.stereotype.Service;
 import com.aigreentick.services.messaging.broadcast.client.dto.FacebookApiResponse;
 import com.aigreentick.services.messaging.broadcast.client.service.impl.WhatsappClient;
 import com.aigreentick.services.messaging.broadcast.dto.response.SendTemplateMessageResponse;
-import com.aigreentick.services.messaging.broadcast.enums.MessageStatus;
 import com.aigreentick.services.messaging.broadcast.kafka.event.BroadcastReportEvent;
 import com.aigreentick.services.messaging.config.ExecutorConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
