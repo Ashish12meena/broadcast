@@ -2,6 +2,7 @@ package com.aigreentick.services.messaging.broadcast.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,25 +39,31 @@ public class BroadcastController {
     @PostMapping("/dispatch")
     public ResponseEntity<ResponseMessage<DispatchResult>> dispatchBroadcast(
             @Valid @RequestBody BroadcastDispatchRequestDto request) {
-        
+
         log.info("=== Dispatch Request Received ===");
         log.info("Items count: {}", request.getItems() != null ? request.getItems().size() : 0);
 
         try {
             ResponseMessage<DispatchResult> response = broadcastOrchestrator.handleDispatch(request);
-            
+
             if ("SUCCESS".equals(response.getStatus())) {
                 return ResponseEntity.ok(response);
             } else {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
             }
-            
+
         } catch (Exception e) {
             log.error("Dispatch failed with exception", e);
             return ResponseEntity
                     .status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ResponseMessage.error("Dispatch failed: " + e.getMessage()));
         }
+    }
+
+    @GetMapping("/check")
+    public ResponseEntity<String> checkRunning() {
+        log.info("=== check Running Request Received ===");
+        return ResponseEntity.ok("Broadcast service is running");
     }
 
     /**
@@ -73,6 +80,6 @@ public class BroadcastController {
     public record DispatchResult(
             int totalDispatched,
             int failedCount,
-            String message
-    ) {}
+            String message) {
+    }
 }

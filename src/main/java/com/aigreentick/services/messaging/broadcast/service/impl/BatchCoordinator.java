@@ -378,7 +378,7 @@ public class BatchCoordinator {
                             whatsappMessageId = msg.getId();
                             String statusStr = msg.getMessageStatus();
                             messageStatus = MessageStatus.fromValue(
-                                statusStr != null ? statusStr : "accepted");
+                                statusStr != null ? statusStr : "sent");
                         }
                     }
 
