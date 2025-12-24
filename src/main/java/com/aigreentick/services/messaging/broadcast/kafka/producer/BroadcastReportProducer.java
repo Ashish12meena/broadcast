@@ -25,12 +25,17 @@ public class BroadcastReportProducer {
 
     /**
      * Publishes a single campaign message event.
+     * CHANGED: Now uses phoneNumberId as partition key instead of broadcastId
+     * 
+     * This ensures all messages for a WhatsApp Business Account go to the same
+     * partition, aligning with per-account rate limiting and batching.
      * 
      * @param event The message event to publish
      * @return CompletableFuture with send result
      */
     public CompletableFuture<SendResult<String, Object>> publishMessage(BroadcastReportEvent event) {
-        String partitionKey = String.valueOf(event.getBroadcastId());
+        // CHANGED: Use phoneNumberId as partition key
+        String partitionKey = event.getPhoneNumberId();
 
         CompletableFuture<SendResult<String, Object>> future = kafkaTemplate.send(
                 topicName,
@@ -39,11 +44,12 @@ public class BroadcastReportProducer {
 
         future.whenComplete((result, ex) -> {
             if (ex != null) {
-                log.error("Failed to publish campaign message event. broadcastId={} eventId={} recipient={}",
-                        event.getBroadcastId(), event.getEventId(), event.getRecipient(), ex);
+                log.error("Failed to publish campaign message event. broadcastId={} phoneNumberId={} eventId={} recipient={}",
+                        event.getBroadcastId(), event.getPhoneNumberId(), event.getEventId(), event.getRecipient(), ex);
             } else {
-                log.debug("Campaign message event published. broadcastId={} eventId={} partition={} offset={}",
+                log.debug("Campaign message event published. broadcastId={} phoneNumberId={} eventId={} partition={} offset={}",
                         event.getBroadcastId(),
+                        event.getPhoneNumberId(),
                         event.getEventId(),
                         result.getRecordMetadata().partition(),
                         result.getRecordMetadata().offset());
@@ -89,8 +95,8 @@ public class BroadcastReportProducer {
             future.get(timeoutSeconds, TimeUnit.SECONDS);
             return true;
         } catch (Exception e) {
-            log.error("Failed to publish message synchronously. broadcastId={} eventId={}",
-                    event.getBroadcastId(), event.getEventId(), e);
+            log.error("Failed to publish message synchronously. broadcastId={} phoneNumberId={} eventId={}",
+                    event.getBroadcastId(), event.getPhoneNumberId(), event.getEventId(), e);
             return false;
         }
     }
@@ -102,8 +108,8 @@ public class BroadcastReportProducer {
         event.setRetryCount(event.getRetryCount() + 1);
         event.setTimestamp(System.currentTimeMillis());
 
-        log.info("Publishing retry event. broadcastId={} eventId={} retryCount={}",
-                event.getBroadcastId(), event.getEventId(), event.getRetryCount());
+        log.info("Publishing retry event. broadcastId={} phoneNumberId={} eventId={} retryCount={}",
+                event.getBroadcastId(), event.getPhoneNumberId(), event.getEventId(), event.getRetryCount());
 
         return publishMessage(event);
     }
